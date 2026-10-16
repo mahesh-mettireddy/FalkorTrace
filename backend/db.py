@@ -809,8 +809,7 @@ class FalkorDBManager:
             if self.url:
                 try:
                     client = OfficialFalkorDB.from_url(self.url)
-                    test_graph = client.select_graph("falkortrace:healthcheck")
-                    test_graph.ro_query("RETURN 1")
+                    client.list_graphs()
                     self._client = client
                     self._mode = "falkordb-cloud"
                     self._last_error = None
@@ -818,7 +817,7 @@ class FalkorDBManager:
                 except Exception as exc:
                     self._last_error = str(exc)
 
-            # 2. Try host/port connection (auto-testing both SSL and non-SSL for cloud instances)
+            # 2. Try host/port connection (testing plain TCP first, then SSL for cloud instances)
             is_cloud_host = self.host not in ("localhost", "127.0.0.1", "falkordb")
             ssl_candidates = [self.ssl, not self.ssl] if is_cloud_host else [self.ssl]
             for ssl_flag in ssl_candidates:
@@ -832,8 +831,7 @@ class FalkorDBManager:
                         socket_timeout=4.0,
                         socket_connect_timeout=3.5,
                     )
-                    test_graph = client.select_graph("falkortrace:healthcheck")
-                    test_graph.ro_query("RETURN 1")
+                    client.list_graphs()
                     self._client = client
                     self.ssl = ssl_flag
                     self._mode = "falkordb-cloud" if is_cloud_host else "falkordb-docker"
