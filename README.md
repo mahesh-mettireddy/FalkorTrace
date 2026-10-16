@@ -5,15 +5,29 @@
 [![Database](https://img.shields.io/badge/FalkorDB-v4.22_GraphBLAS-indigo)](https://www.falkordb.com/)
 [![Backend](https://img.shields.io/badge/FastAPI-Python_3.11-009688)](https://fastapi.tiangolo.com/)
 [![Protocol](https://img.shields.io/badge/MCP-Model_Context_Protocol-amber)](https://modelcontextprotocol.io/)
-[![Tests](https://img.shields.io/badge/Pytest-8%2F8_Passing-emerald)](./tests/test_falkortrace.py)
+[![Tests](https://img.shields.io/badge/Pytest-9%2F9_Passing-emerald)](./tests/test_falkortrace.py)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Vercel_(ap--south--1)-success)](https://falkor-trace.vercel.app/)
 
 ---
 
-## Overview
+## Core Thesis: Standard Vector-Only RAG vs. RAG + FalkorDB Graph Engine
 
-When an enterprise SaaS customer reports a production billing or subscription anomaly (modeled on **Kill Bill**, the open-source enterprise Java subscription and invoicing platform), on-call engineers spend hours correlating support tickets, PRD/SRD business specifications, microservice dependency chains, recent Git commits, and PagerDuty rosters.
+Why do standard **Vector-Only RAG** pipelines fail in production incident triage, and why is **FalkorDB** the missing core engine for enterprise AI agents?
 
-**FalkorTrace** unifies the entire operational and SDLC topology inside **FalkorDB**. Instead of vector RAG—which chunks documents and forces an LLM to guess structural relationships—FalkorTrace orchestrates a **5-Agent Triage Swarm** executing **deterministic, parameterized Cypher queries (`graph.ro_query`)** and **native FalkorDB GraphBLAS algorithms (`algo.SPpaths`, `algo.pageRank`, `algo.WCC`, `algo.betweenness`)** exposed over the **Model Context Protocol (MCP)**.
+When a customer files a ticket on an entrypoint service (e.g., `billing-edge-api`), **Standard Vector-Only RAG** embeds the ticket text and retrieves the Top-K document chunks by Cosine Similarity. Because the ticket only mentions `billing-edge-api`, Vector RAG retrieves local chunks (`sim = 0.81`) and completely misses a breaking Git commit **3 hops downstream** in `proration-engine` (`sim = 0.14`, ranked #9)—or worse, **hallucinates** a match when queried about a non-existent microservice (`quantum-ledger-v9`).
+
+**FalkorTrace** places **FalkorDB at the center of the architecture** as the live operational Company Brain, running a real-time **Head-to-Head Comparison** on every query:
+1. **Left Pane (`❌ Standard Vector-Only RAG Baseline`)**: Computes real TF-IDF / Cosine Similarity over unstructured PRDs, Code summaries, and Git changelogs, exposing Top-3 chunk retrieval blindness and nearest-neighbor hallucinations.
+2. **Center Hero Pane (`🧠 Core Central Unit: Live FalkorDB Graph Engine`)**: Traverses multi-hop dependencies (`[:DEPENDS_ON*1..4]`), native GraphBLAS algorithms (`algo.SPpaths`, `algo.pageRank`, `algo.WCC`, `algo.betweenness`), and persistent episodic memory (`(:Finding)`), with **Live Chaos Fault Injection** (`/api/inject-fault`) and **1-Click Patch Rollback** (`/api/remediate`).
+3. **Right Pane (`✅ RAG + FalkorDB Verified Verdict`)**: Combines FalkorDB lineage provenance with optional live **Gemini / OpenAI** synthesis guarded by the **`accepts(sentence, answer)`** post-generation zero-hallucination gate.
+
+### Live 6-Scenario Enterprise Benchmark (`/api/benchmark`)
+| Metric | ❌ Standard Vector-Only RAG (`k=3`) | ✅ RAG + FalkorDB Graph Engine |
+| :--- | :--- | :--- |
+| **Verified Root-Cause Accuracy** | **0.0%** (Fails multi-hop & live compliance proof) | **100.0% (6/6 Scenarios Verified)** |
+| **Hallucination / Wrong Blame Rate** | **50.0%+** (Nearest-neighbor trap & island guessing) | **0.0%** (Entity Gate + `accepts()` Guardrail) |
+| **Multi-Hop Dependency Discovery** | **0 Hops** (Keyword-bound to entrypoint) | **1..4 Hops in ~10 ms** (`algo.SPpaths` GraphBLAS) |
+| **Cross-Session Incident Memory** | **Stateless** (Re-runs noisy text search) | **`~2 ms` O(1) Recall** (`(:Finding)-[:ABOUT]->(:Service)`) |
 
 Every investigation deterministically classifies the incident into one of **4 Answer Shapes** (`answered_with_path`, `answered_from_memory`, `not_in_the_graph`, `unknown_service`) and adjudicates the root cause:
 

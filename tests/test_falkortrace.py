@@ -237,3 +237,49 @@ def test_natural_language_ask_and_compare_depth_and_finding_dedup() -> None:
     findings_for_4902 = [f for f in graph_after["findings"] if f.get("ticket_id") == "TICKET-4902"]
     assert len(findings_for_4902) == 1
 
+
+def test_vector_rag_vs_falkordb_benchmark_and_live_fault_injection() -> None:
+    # 1. Run 6-scenario enterprise benchmark comparing Vector-Only RAG vs RAG + FalkorDB
+    bm = client.post("/api/benchmark", json={"tenant_id": "killbill-prod"}).json()
+    assert bm["total_scenarios"] == 6
+    assert bm["falkordb_graph_scorecard"]["accuracy_pct"] == 100.0
+    assert bm["falkordb_graph_scorecard"]["hallucination_rate_pct"] == 0.0
+    assert bm["vector_rag_scorecard"]["accuracy_pct"] < 50.0
+    assert bm["vector_rag_scorecard"]["hallucination_rate_pct"] >= 50.0
+
+    # 2. First remediate default proration-engine regression, then inject a live fault on tax-ledger-adapter
+    client.post(
+        "/api/remediate",
+        json={"tenant_id": "killbill-prod", "service": "proration-engine", "sha": "9f82d1a"},
+    )
+    inj = client.post(
+        "/api/inject-fault",
+        json={
+            "tenant_id": "killbill-prod",
+            "service": "tax-ledger-adapter",
+            "author": "@chaos-bot",
+            "summary": "feat(tax): bypass regional VAT rounding cache",
+        },
+    ).json()
+    assert inj["status"] == "fault_injected"
+    assert inj["service"] == "tax-ledger-adapter"
+
+    # 3. Triage from entrypoint billing-edge-api now dynamically discovers the new fault on tax-ledger-adapter!
+    triage_after = client.post(
+        "/api/triage",
+        json={
+            "tenant_id": "killbill-prod",
+            "service": "billing-edge-api",
+            "ticket_id": "TICKET-4902",
+            "depth": 4,
+            "bypass_memory": True,
+        },
+    ).json()
+    assert triage_after["verdict"] == "PATCH_REGRESSION"
+    assert triage_after["root_cause_service"] == "tax-ledger-adapter"
+    assert triage_after["vector_rag_comparison"]["rag_status"] == "FAILED_MULTI_HOP"
+
+    # Re-seed clean state after chaos test
+    client.post("/api/seed", json={"tenant_id": "killbill-prod"})
+
+

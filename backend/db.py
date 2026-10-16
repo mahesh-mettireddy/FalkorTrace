@@ -584,6 +584,48 @@ class InMemoryGraph:
             self._dataset["findings"] = []
             return [[hotfix_sha, target_service, modified_mod]]
 
+        # 5. Live Chaos Fault Injection mutation
+        if "SET impl.compliant = false" in q:
+            target_service = params.get("service", "tax-compliance-svc")
+            fault_sha = params.get("sha", "ch99999")
+            patch_version = params.get("patch_version", "Patch-v9.9-LIVE")
+            summary = params.get("summary", "Live injected fault")
+            diff_snippet = params.get("diff_snippet", "")
+            now_iso = params.get("at", "2026-10-16T08:00:00Z")
+            author = params.get("author", "@chaos-bot")
+            note = params.get("note", "Live fault injected")
+
+            mod_name = ""
+            req_id = ""
+            for mod in self._dataset["code_modules"]:
+                if mod["service"] == target_service:
+                    mod_name = mod["name"]
+                    for im in self._dataset["implements_edges"]:
+                        if im["module"] == mod_name:
+                            im["compliant"] = False
+                            im["note"] = note
+                            req_id = im["requirement"]
+                    break
+
+            if mod_name:
+                self._dataset["changes"].insert(
+                    0,
+                    {
+                        "sha": fault_sha,
+                        "patch_version": patch_version,
+                        "summary": summary,
+                        "regressions_introduced": True,
+                        "diff_snippet": diff_snippet,
+                        "at": now_iso,
+                        "hours_ago": 1,
+                        "author": author,
+                        "modified_module": mod_name,
+                        "deployed_service": target_service,
+                    },
+                )
+            self._dataset["findings"] = []
+            return [[mod_name, req_id]]
+
         return []
 
     # -------------------------------------------------------------------------
@@ -956,14 +998,35 @@ def get_live_dataset_snapshot(graph: Any, tenant_id: str = "killbill-prod") -> D
 
         ch_res = graph.ro_query(
             """
-            MATCH (ch:Change)
-            RETURN ch.sha AS sha, ch.regressions_introduced AS reg
+            MATCH (s:Service)<-[:DEPLOYED_TO]-(ch:Change)-[:MODIFIED]->(c:Code_Module)
+            RETURN ch.sha AS sha, ch.patch_version AS pv, ch.summary AS summary,
+                   ch.regressions_introduced AS reg, ch.diff_snippet AS diff,
+                   ch.at AS at, ch.hours_ago AS hrs, ch.author AS author,
+                   c.name AS mod_name, s.name AS svc_name
+            ORDER BY ch.hours_ago ASC
             """
         )
-        ch_map = {r[0]: bool(r[1]) for r in ch_res.result_set}
-        for ch in ds["changes"]:
-            if ch["sha"] in ch_map:
-                ch["regressions_introduced"] = ch_map[ch["sha"]]
+        known_shas = {ch["sha"]: ch for ch in ds["changes"]}
+        for r in ch_res.result_set:
+            sha = r[0]
+            if sha in known_shas:
+                known_shas[sha]["regressions_introduced"] = bool(r[3])
+            else:
+                ds["changes"].insert(
+                    0,
+                    {
+                        "sha": sha,
+                        "patch_version": r[1] or "Patch-LIVE",
+                        "summary": r[2] or "Live injected commit",
+                        "regressions_introduced": bool(r[3]),
+                        "diff_snippet": r[4] or "",
+                        "at": r[5] or "",
+                        "hours_ago": int(r[6] or 1),
+                        "author": r[7] or "@chaos-bot",
+                        "modified_module": r[8] or "",
+                        "deployed_service": r[9] or "",
+                    },
+                )
     except Exception:
         pass
     return ds

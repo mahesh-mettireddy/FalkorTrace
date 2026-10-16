@@ -24,11 +24,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
 
-from backend.agent import resolve_natural_language_query, run_multi_agent_triage
+from backend.agent import (
+    configure_llm_runtime,
+    get_llm_status,
+    resolve_natural_language_query,
+    run_head_to_head_benchmark,
+    run_multi_agent_triage,
+)
 from backend.db import ensure_tenant_seeded, get_db, get_live_dataset_snapshot
 from backend.mcp_server import call_mcp_tool, list_mcp_tools
 from backend.seed import TENANT_METADATA, seed_tenant
-from backend.tools import apply_hotfix_remediation, recall_all_tenant_findings
+from backend.tools import apply_hotfix_remediation, inject_live_fault, recall_all_tenant_findings
 
 
 @asynccontextmanager
@@ -90,6 +96,19 @@ class RemediateRequest(BaseModel):
     sha: str = Field(default="9f82d1a")
 
 
+class InjectFaultRequest(BaseModel):
+    tenant_id: str = Field(default="killbill-prod")
+    service: str = Field(default="tax-ledger-adapter")
+    author: str = Field(default="@chaos-bot")
+    summary: str = Field(default="feat(tax): bypass regional VAT rounding cache on multi-hop invoices")
+
+
+class LLMConfigRequest(BaseModel):
+    provider: str = Field(default="auto")
+    api_key: str = Field(default="")
+    model: str = Field(default="")
+
+
 class FalkorDBConfigRequest(BaseModel):
     host: str = Field(default="localhost")
     port: int = Field(default=6379)
@@ -120,9 +139,16 @@ def health_check() -> Dict[str, Any]:
     return {
         "status": "ok",
         "falkordb": db.status(),
+        "llm": get_llm_status(),
         "tenants": TENANT_METADATA,
         "mcp_tools_count": len(list_mcp_tools()),
     }
+
+
+@app.post("/api/config/llm")
+def update_llm_config(req: LLMConfigRequest) -> Dict[str, Any]:
+    llm_state = configure_llm_runtime(provider=req.provider, api_key=req.api_key, model=req.model)
+    return {"status": "ok", "llm": llm_state}
 
 
 @app.post("/api/config/falkordb")
@@ -399,6 +425,24 @@ def remediate_patch_regression(req: RemediateRequest) -> Dict[str, Any]:
     return apply_hotfix_remediation(graph, service=req.service, sha=req.sha)
 
 
+@app.post("/api/inject-fault")
+def inject_chaos_fault_endpoint(req: InjectFaultRequest) -> Dict[str, Any]:
+    db = get_db()
+    ensure_tenant_seeded(db, req.tenant_id)
+    graph = db.select_graph(f"falkortrace:{req.tenant_id}")
+    return inject_live_fault(
+        graph=graph,
+        service=req.service,
+        author=req.author,
+        summary=req.summary,
+    )
+
+
+@app.post("/api/benchmark")
+def execute_head_to_head_benchmark(req: SeedRequest) -> Dict[str, Any]:
+    return run_head_to_head_benchmark(tenant_id=req.tenant_id)
+
+
 @app.get("/api/mcp/tools")
 def get_mcp_tools() -> Dict[str, Any]:
     return {"tools": list_mcp_tools()}
@@ -410,4 +454,5 @@ def invoke_mcp_tool(req: MCPCallRequest) -> Dict[str, Any]:
         return call_mcp_tool(req.tool_name, req.arguments, tenant_id=req.tenant_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
 

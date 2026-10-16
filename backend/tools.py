@@ -863,3 +863,73 @@ RETURN c.name AS module, r.id AS req_id
         "at": now_iso,
         "elapsed_ms": elapsed_ms,
     }
+
+
+# ============================================================================
+# Live Graph Action: Inject Chaos Fault / Breaking Commit (`graph.query()`)
+# ============================================================================
+def inject_live_fault(
+    graph: Any,
+    service: str = "tax-ledger-adapter",
+    author: str = "@chaos-bot",
+    summary: str = "feat(tax): bypass regional VAT rounding cache on multi-hop invoices",
+) -> Dict[str, Any]:
+    """
+    Mutates live FalkorDB (`graph.query()`) to inject a breaking deployment (:Change)
+    on a downstream service and flip its (:Code_Module)-[impl:IMPLEMENTS]->(:Requirement)
+    edge to `compliant = false`. Proves live graph reactivity vs static Vector RAG blindness.
+    """
+    fault_sha = f"ch{uuid.uuid4().hex[:5]}"
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    patch_version = f"Patch-v9.{uuid.uuid4().hex[:2].upper()}-LIVE"
+    diff_snippet = (
+        "- BigDecimal vat = subtotal.multiply(rate).setScale(2, RoundingMode.HALF_EVEN);\n"
+        "+ BigDecimal vat = subtotal.multiply(rate); // LIVE FAULT INJECTED: unrounded float drift"
+    )
+    cypher = """
+MATCH (s:Service {name: $service})-[:IMPLEMENTED_BY]->(c:Code_Module)-[impl:IMPLEMENTS]->(r:Requirement)
+SET impl.compliant = false,
+    impl.note = $note
+CREATE (ch:Change {
+    sha: $sha,
+    patch_version: $patch_version,
+    summary: $summary,
+    regressions_introduced: true,
+    diff_snippet: $diff_snippet,
+    at: $at,
+    hours_ago: 1,
+    author: $author
+})
+CREATE (ch)-[:MODIFIED]->(c)
+CREATE (ch)-[:DEPLOYED_TO]->(s)
+RETURN c.name AS module, r.id AS req_id
+"""
+    params = {
+        "service": service,
+        "sha": fault_sha,
+        "patch_version": patch_version,
+        "summary": summary,
+        "diff_snippet": diff_snippet,
+        "at": now_iso,
+        "author": author,
+        "note": f"LIVE CHAOS FAULT injected via {patch_version} (sha:{fault_sha}) on {service}",
+    }
+    t0 = time.perf_counter()
+    res = graph.query(cypher, params)
+    graph.query("MATCH (f:Finding) DETACH DELETE f")
+    elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+
+    mod_name = res.result_set[0][0] if res.result_set and res.result_set[0] else ""
+    req_id = res.result_set[0][1] if res.result_set and res.result_set[0] and len(res.result_set[0]) > 1 else ""
+
+    return {
+        "status": "fault_injected",
+        "service": service,
+        "sha": fault_sha,
+        "patch_version": patch_version,
+        "module": mod_name,
+        "requirement_violated": req_id,
+        "at": now_iso,
+        "elapsed_ms": elapsed_ms,
+    }
+
