@@ -1,0 +1,22 @@
+# Python cache & build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets & local environment variables (never commit real passwords/keys)
+.env
+.env.local
+
+# OS & IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

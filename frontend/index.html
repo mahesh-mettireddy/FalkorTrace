@@ -1,0 +1,1578 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FalkorTrace — Multi-Agent Graph Triage &amp; Company Brain</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #060913;
+      color: #f8fafc;
+      overflow: hidden;
+    }
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #090d1a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+
+    /* Subtle technical grid background for graph canvas */
+    .bg-graph-grid {
+      background-color: #070b16;
+      background-image:
+        radial-gradient(circle at 50% 35%, rgba(99, 102, 241, 0.09), transparent 65%),
+        linear-gradient(to right, rgba(30, 41, 59, 0.28) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(30, 41, 59, 0.28) 1px, transparent 1px);
+      background-size: 100% 100%, 32px 32px, 32px 32px;
+    }
+
+    /* Animated glowing path for active multi-hop traversal */
+    @keyframes dashFlow {
+      to {
+        stroke-dashoffset: -48;
+      }
+    }
+    .edge-active-flow {
+      stroke-dasharray: 8 4;
+      animation: dashFlow 0.85s linear infinite;
+    }
+
+    @keyframes pulseRing {
+      0%, 100% {
+        filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.8));
+      }
+      50% {
+        filter: drop-shadow(0 0 16px rgba(244, 63, 94, 0.95));
+      }
+    }
+    .node-active-glow {
+      animation: pulseRing 2.2s ease-in-out infinite;
+    }
+
+    .glass-card {
+      background: rgba(15, 23, 42, 0.78);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(51, 65, 85, 0.65);
+    }
+
+    .scenario-btn {
+      transition: all 0.16s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .scenario-btn:hover {
+      transform: translateY(-1px);
+    }
+  </style>
+</head>
+<body class="h-screen w-screen flex flex-col select-none">
+
+  <!-- ===================================================================== -->
+  <!-- TOP NAVIGATION & NATURAL LANGUAGE COMMAND BAR                         -->
+  <!-- ===================================================================== -->
+  <header class="h-14 border-b border-slate-800/90 bg-slate-950/95 px-4 flex items-center justify-between shrink-0 z-30 gap-3">
+    <!-- Brand & Engine Badge -->
+    <div class="flex items-center gap-3 shrink-0">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 via-purple-600 to-rose-500 flex items-center justify-center shadow-lg shadow-indigo-500/25 border border-white/15">
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="font-extrabold text-sm tracking-tight text-white">FalkorTrace</span>
+          <span class="text-[10px] mono uppercase px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 font-semibold">
+            Tracks 01 · 02 · 03
+          </span>
+          <span id="dbStatusBadge" onclick="openDbModal()" title="Click to configure FalkorDB Docker or Cloud instance"
+                class="cursor-pointer text-[10px] mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5 hover:bg-emerald-500/25 transition">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span id="dbModeText">FalkorDB Connecting...</span>
+          </span>
+        </div>
+        <p class="text-[11px] text-slate-400">Multi-Agent Graph Triage Swarm &amp; Enterprise Company Brain</p>
+      </div>
+    </div>
+
+    <!-- Natural Language Question Router Bar (/api/ask) -->
+    <form onsubmit="submitNaturalLanguageAsk(event)" class="flex-1 max-w-xl flex items-center gap-1.5">
+      <div class="relative flex-1">
+        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400 text-xs">✦</span>
+        <input id="nlAskInput" type="text"
+               placeholder="Ask Company Brain (e.g., 'Why was ACME overcharged on TICKET-4902?' or 'Is quantum-ledger-v9 safe?')"
+               class="w-full bg-slate-900/95 border border-slate-700/80 focus:border-indigo-500 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none transition" />
+      </div>
+      <button type="submit"
+              class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition shrink-0 shadow-sm shadow-indigo-500/20">
+        Ask Graph
+      </button>
+    </form>
+
+    <!-- Right Controls: Tenant Switcher, Depth Diff, Memory & Reset -->
+    <div class="flex items-center gap-2 shrink-0">
+      <div class="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1">
+        <span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Tenant Graph:</span>
+        <select id="tenantSelect" onchange="switchTenant(this.value)"
+                class="bg-transparent text-xs font-semibold text-indigo-300 mono focus:outline-none cursor-pointer">
+          <option value="killbill-prod" class="bg-slate-900 text-slate-100">falkortrace:killbill-prod</option>
+          <option value="nexus-commerce" class="bg-slate-900 text-slate-100">falkortrace:nexus-commerce</option>
+        </select>
+      </div>
+
+      <button onclick="runDepthComparison()"
+              title="Compare Shallow Depth=1 vs Multi-Hop Depth=4 side-by-side"
+              class="px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-xs font-semibold transition flex items-center gap-1">
+        <span>⚡</span>
+        <span>Depth=1 vs 4</span>
+      </button>
+
+      <button onclick="clearEpisodicMemory()"
+              title="Delete (:Finding) episodic memory nodes in current tenant graph"
+              class="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-xs text-slate-300 transition">
+        🧹 Clear Memory
+      </button>
+
+      <button onclick="reseedCurrentTenant()"
+              title="Reset &amp; re-seed current tenant graph to clean initial state"
+              class="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-xs text-slate-300 transition">
+        🔄 Reset Graph
+      </button>
+    </div>
+  </header>
+
+  <!-- ===================================================================== -->
+  <!-- MAIN 3-PANE WORKSPACE                                                 -->
+  <!-- ===================================================================== -->
+  <div class="flex-1 grid grid-cols-12 min-h-0 overflow-hidden">
+
+    <!-- =================================================================== -->
+    <!-- LEFT PANE (3 COLS): SCENARIO PRESETS, CONTROLS & AGENT SWARM        -->
+    <!-- =================================================================== -->
+    <aside class="col-span-3 border-r border-slate-800/90 bg-slate-950/75 flex flex-col min-h-0 overflow-y-auto p-3.5 space-y-3.5">
+
+      <!-- 6 One-Click Judge Scenario Presets -->
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+            1-Click Judge Verification Scenarios
+          </span>
+          <span class="text-[10px] mono text-indigo-400">All 4 Answer Shapes</span>
+        </div>
+
+        <div class="space-y-1.5">
+          <!-- Scenario 1 -->
+          <button id="scen-1" onclick="runScenario(1)"
+                  class="scenario-btn w-full text-left p-2.5 rounded-xl bg-rose-950/30 hover:bg-rose-950/50 border border-rose-500/40 group">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-rose-300">1. Multi-Hop Patch Regression</span>
+              <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">PATCH_REGRESSION</span>
+            </div>
+            <p class="text-[11px] text-slate-300 mt-1 leading-snug">
+              <span class="mono text-rose-200">TICKET-4902</span> on <span class="mono text-sky-300">billing-edge-api</span> → traverses 3 hops to <span class="mono text-rose-300">proration-engine</span> (<span class="mono">sha:9f82d1a</span> violates <span class="mono">PRD-INV-104</span>).
+            </p>
+          </button>
+
+          <!-- Scenario 2 -->
+          <button id="scen-2" onclick="runScenario(2)"
+                  class="scenario-btn w-full text-left p-2.5 rounded-xl bg-emerald-950/25 hover:bg-emerald-950/45 border border-emerald-500/35 group">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-emerald-300">2. Working As Per PRD Spec</span>
+              <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">WORKING_AS_PER_PRD</span>
+            </div>
+            <p class="text-[11px] text-slate-300 mt-1 leading-snug">
+              <span class="mono text-emerald-200">TICKET-4908</span> on <span class="mono text-sky-300">invoice-orchestrator</span> → <span class="mono">active_seats=42 &lt; 50</span> minimum under <span class="mono">PRD-DISC-209</span>.
+            </p>
+          </button>
+
+          <!-- Scenario 3 -->
+          <button id="scen-3" onclick="runScenario(3)"
+                  class="scenario-btn w-full text-left p-2.5 rounded-xl bg-amber-950/25 hover:bg-amber-950/45 border border-amber-500/35 group">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-amber-300">3. Client Webhook Payload Issue</span>
+              <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">DATA_PAYLOAD_ISSUE</span>
+            </div>
+            <p class="text-[11px] text-slate-300 mt-1 leading-snug">
+              <span class="mono text-amber-200">TICKET-4915</span> on <span class="mono text-sky-300">payment-gateway-router</span> → client sent <span class="mono">"USDT-ERC20"</span> violating <span class="mono">SRD-PAY-301</span>.
+            </p>
+          </button>
+
+          <!-- Scenario 4 -->
+          <button id="scen-4" onclick="runScenario(4)"
+                  class="scenario-btn w-full text-left p-2.5 rounded-xl bg-purple-950/30 hover:bg-purple-950/50 border border-purple-500/40 group">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-purple-300">4. Cross-Session Memory Recall</span>
+              <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">answered_from_memory</span>
+            </div>
+            <p class="text-[11px] text-slate-300 mt-1 leading-snug">
+              Re-queries <span class="mono text-sky-300">billing-edge-api</span> → Memory Agent recalls <span class="mono text-purple-300">(:Finding)</span> node in 1 hop.
+            </p>
+          </button>
+
+          <!-- Scenario 5 -->
+          <button id="scen-5" onclick="runScenario(5)"
+                  class="scenario-btn w-full text-left p-2.5 rounded-xl bg-cyan-950/25 hover:bg-cyan-950/45 border border-cyan-500/35 group">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-cyan-300">5. Isolated Service (WCC Island)</span>
+              <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">not_in_the_graph</span>
+            </div>
+            <p class="text-[11px] text-slate-300 mt-1 leading-snug">
+              Queries <span class="mono text-cyan-200">audit-vault-archiver</span> → exists in FalkorDB but has 0 dependency edges (unmodeled island).
+            </p>
+          </button>
+
+          <!-- Scenario 6 -->
+          <button id="scen-6" onclick="runScenario(6)"
+                  class="scenario-btn w-full text-left p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800/90 border border-slate-600/50 group">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-200">6. Hallucination Gate (Unknown Entity)</span>
+              <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-slate-700 text-slate-200">unknown_service</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1 leading-snug">
+              Queries <span class="mono text-slate-200">quantum-ledger-v9</span> → Entity Resolution Gate halts immediately with 0 downstream queries.
+            </p>
+          </button>
+        </div>
+      </div>
+
+      <!-- Manual Parameter Controls & Blast Radius Depth Slider -->
+      <div class="glass-card rounded-xl p-3 space-y-2.5">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-bold uppercase tracking-wider text-slate-300">Triage Parameters</span>
+          <span id="depthPill" class="text-[10px] mono px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">
+            depth = 4 hops
+          </span>
+        </div>
+
+        <div>
+          <label class="text-[10px] uppercase text-slate-400 font-semibold block mb-1">Target Service (`$service`)</label>
+          <input id="serviceInput" type="text" value="billing-edge-api"
+                 class="w-full bg-slate-950 border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-xs mono text-sky-300 focus:outline-none focus:border-indigo-500" />
+        </div>
+
+        <div>
+          <label class="text-[10px] uppercase text-slate-400 font-semibold block mb-1">Client Ticket ID (`$ticket_id`)</label>
+          <input id="ticketInput" type="text" value="TICKET-4902" placeholder="Optional (e.g. TICKET-4902)"
+                 class="w-full bg-slate-950 border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-xs mono text-amber-200 focus:outline-none focus:border-indigo-500" />
+        </div>
+
+        <!-- Blast Radius Depth Slider (Rule 3) -->
+        <div>
+          <div class="flex justify-between text-[11px] mb-1">
+            <span class="text-slate-300 font-medium">Blast Radius Depth (`*1..4`)</span>
+            <span class="text-[10px] text-slate-400">Slide 1 → 4 to compare</span>
+          </div>
+          <input id="depthSlider" type="range" min="1" max="4" value="4"
+                 oninput="onDepthSliderChange(this.value)"
+                 class="w-full accent-indigo-500 cursor-pointer" />
+          <div class="flex justify-between text-[10px] mono text-slate-400 px-0.5">
+            <span>1 Hop (Shallow)</span>
+            <span>2 Hops</span>
+            <span>3 Hops (Root)</span>
+            <span>4 Hops (Full)</span>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between pt-1">
+          <label class="flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer">
+            <input id="bypassMemoryCheck" type="checkbox" class="accent-indigo-500 rounded" />
+            <span>Bypass Episodic Memory</span>
+          </label>
+          <button onclick="executeManualTriage()"
+                  class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold shadow-md shadow-indigo-500/20 transition">
+            ▶ Run Swarm
+          </button>
+        </div>
+      </div>
+
+      <!-- Live 5-Agent Swarm Coordination Status -->
+      <div class="glass-card rounded-xl p-3 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-bold uppercase tracking-wider text-slate-300">5-Agent Swarm Pipeline</span>
+          <span id="totalLatencyBadge" class="text-[10px] mono text-emerald-400 font-semibold">0.0 ms</span>
+        </div>
+        <div id="agentSwarmList" class="space-y-1.5 text-xs">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- =================================================================== -->
+    <!-- CENTER PANE (5 COLS): MULTI-HOP DAG GRAPH VISUALIZER                -->
+    <!-- =================================================================== -->
+    <main class="col-span-5 bg-graph-grid relative flex flex-col min-h-0 overflow-hidden border-r border-slate-800/90">
+
+      <!-- Top Overlay: Node Type Legend & Filter Pills -->
+      <div class="p-2.5 flex items-center justify-between gap-2 bg-slate-950/85 border-b border-slate-800/80 z-10 backdrop-blur-md">
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">Topology:</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/35 font-medium">● Service</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/35 font-medium">● Ticket</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/35 font-medium">● Code_Module</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/35 font-medium">● PRD/SRD</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/35 font-medium">● Patch Change</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/35 font-medium">● (:Finding) Memory</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-teal-500/15 text-teal-300 border border-teal-500/35 font-medium">● Team / On-Call</span>
+        </div>
+
+        <!-- Zoom & Fit Controls -->
+        <div class="flex items-center gap-1 shrink-0">
+          <button onclick="zoomGraph(1.18)" title="Zoom In"
+                  class="w-6 h-6 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs text-slate-200 flex items-center justify-center">+</button>
+          <button onclick="zoomGraph(0.84)" title="Zoom Out"
+                  class="w-6 h-6 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs text-slate-200 flex items-center justify-center">−</button>
+          <button onclick="resetGraphViewport()" title="Reset Zoom &amp; Node Layout"
+                  class="px-2 h-6 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[10px] mono text-slate-300 flex items-center justify-center">Fit</button>
+        </div>
+      </div>
+
+      <!-- Active Traversal Breadcrumb Bar -->
+      <div id="breadcrumbBanner" class="px-3 py-1.5 bg-slate-900/90 border-b border-slate-800/80 flex items-center gap-1.5 overflow-x-auto text-[11px] mono shrink-0">
+        <span class="text-slate-400 font-semibold uppercase text-[10px]">Active Hop Path:</span>
+        <span class="text-slate-400">Select a scenario to trace multi-hop provenance...</span>
+      </div>
+
+      <!-- Interactive SVG Graph Canvas -->
+      <div id="svgContainer" class="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing">
+        <svg id="graphSvg" viewBox="0 0 1120 760" class="w-full h-full">
+          <defs>
+            <marker id="arrow-default" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#475569" />
+            </marker>
+            <marker id="arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#818cf8" />
+            </marker>
+            <marker id="arrow-danger" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#f43f5e" />
+            </marker>
+            <marker id="arrow-memory" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#c084fc" />
+            </marker>
+          </defs>
+          <g id="viewportGroup">
+            <!-- Semantic Lane Guides -->
+            <g id="laneGuidesLayer"></g>
+            <!-- Directed Curved Edges -->
+            <g id="edgesLayer"></g>
+            <!-- Interactive Nodes -->
+            <g id="nodesLayer"></g>
+          </g>
+        </svg>
+
+        <!-- Floating Node Inspector Drawer (Bottom of Center Canvas) -->
+        <div id="nodeInspector" class="hidden absolute bottom-3 left-3 right-3 glass-card rounded-xl p-3 shadow-2xl border border-indigo-500/40 z-20">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <div class="flex items-center gap-2">
+                <span id="inspTypeBadge" class="text-[10px] mono uppercase px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-semibold">Service</span>
+                <h4 id="inspTitle" class="text-sm font-bold text-white mono">billing-edge-api</h4>
+              </div>
+              <p id="inspSubtitle" class="text-xs text-slate-300 mt-0.5"></p>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <button id="inspTriageBtn" onclick="triageInspectedService()"
+                      class="hidden px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold">
+                ▶ Triage This Service
+              </button>
+              <button onclick="closeNodeInspector()" class="text-slate-400 hover:text-white text-xs px-1.5 py-0.5">✕</button>
+            </div>
+          </div>
+          <pre id="inspJson" class="mt-2 text-[10px] mono text-slate-300 bg-slate-950/90 p-2 rounded-lg border border-slate-800 max-h-28 overflow-y-auto whitespace-pre-wrap"></pre>
+        </div>
+      </div>
+
+      <!-- Bottom Status Footer -->
+      <div class="px-3 py-1.5 bg-slate-950/90 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+        <div class="flex items-center gap-3">
+          <span>Nodes: <strong id="statNodeCount" class="text-slate-200 mono">0</strong></span>
+          <span>Edges: <strong id="statEdgeCount" class="text-slate-200 mono">0</strong></span>
+          <span>Episodic Memories: <strong id="statFindingCount" class="text-purple-300 mono">0</strong></span>
+        </div>
+        <span class="text-[10px] text-slate-400">Scroll to Zoom · Drag Canvas to Pan · Drag Nodes to Rearrange</span>
+      </div>
+    </main>
+
+    <!-- =================================================================== -->
+    <!-- RIGHT PANE (4 COLS): VERDICT, PROVENANCE, CYPHER TRACE & MCP        -->
+    <!-- =================================================================== -->
+    <section class="col-span-4 bg-slate-950/85 flex flex-col min-h-0 overflow-hidden">
+
+      <!-- Right Pane Navigation Tabs -->
+      <div class="flex border-b border-slate-800/90 bg-slate-950 px-3 pt-2 gap-1 shrink-0">
+        <button id="tabBtn-verdict" onclick="switchRightTab('verdict')"
+                class="px-3 py-2 text-xs font-bold border-b-2 border-indigo-500 text-white transition">
+          1. Verdict &amp; Provenance
+        </button>
+        <button id="tabBtn-trace" onclick="switchRightTab('trace')"
+                class="px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-1.5">
+          <span>2. Cypher Trace (`ro_query`)</span>
+          <span id="traceCountBadge" class="text-[10px] mono px-1.5 py-0.2 rounded-full bg-slate-800 text-indigo-300">0</span>
+        </button>
+        <button id="tabBtn-mcp" onclick="switchRightTab('mcp')"
+                class="px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition">
+          3. MCP Playground
+        </button>
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- TAB 1: VERDICT, PROVENANCE, DEPTH COMPARISON & HOTFIX REMEDIATION -->
+      <!-- ================================================================= -->
+      <div id="tabPane-verdict" class="flex-1 overflow-y-auto p-3.5 space-y-3.5">
+
+        <!-- Optional Side-by-Side Depth=1 vs Depth=4 Comparison Drawer -->
+        <div id="depthCompareCard" class="hidden rounded-xl border border-amber-500/50 bg-amber-950/20 p-3 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1.5">
+              <span class="text-sm">⚡</span>
+              <span class="text-xs font-bold uppercase tracking-wider text-amber-300">Blast Radius Horizon Comparison</span>
+            </div>
+            <button onclick="document.getElementById('depthCompareCard').classList.add('hidden')"
+                    class="text-xs text-slate-400 hover:text-white">✕</button>
+          </div>
+          <div id="depthCompareContent" class="grid grid-cols-2 gap-2 text-xs"></div>
+        </div>
+
+        <!-- Primary Verdict Banner Card -->
+        <div id="verdictBanner" class="rounded-xl p-3.5 border border-slate-700 bg-slate-900/70 space-y-2">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <span id="verdictBadge" class="text-xs mono font-extrabold uppercase px-2.5 py-1 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+              READY
+            </span>
+            <div class="flex items-center gap-1.5">
+              <span id="outcomeShapeBadge" class="text-[10px] mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                answered_with_path
+              </span>
+              <span id="guardrailBadge" class="text-[10px] mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                🛡️ accepts(): PASSED
+              </span>
+            </div>
+          </div>
+
+          <p id="verdictSummary" class="text-xs text-slate-200 leading-relaxed font-medium">
+            Select a scenario on the left or ask a question above to execute the FalkorTrace Multi-Agent Triage Swarm.
+          </p>
+
+          <!-- Live Remediation Action Button (Shown when PATCH_REGRESSION is active) -->
+          <div id="remediateActionBox" class="hidden pt-2 border-t border-rose-500/30 flex items-center justify-between gap-2">
+            <div class="text-[11px] text-rose-200">
+              <span class="font-bold">Live Graph Action:</span> Roll back faulty patch &amp; restore PRD compliance in FalkorDB.
+            </div>
+            <button onclick="triggerLiveHotfix()"
+                    class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shrink-0 shadow-lg shadow-emerald-600/25 transition">
+              🔧 Apply Hotfix &amp; Re-Verify
+            </button>
+          </div>
+        </div>
+
+        <!-- Provenance Card 1: PRD / SRD Contract vs. Client Payload -->
+        <div id="prdCard" class="glass-card rounded-xl p-3 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-300">
+              📜 PRD / SRD Contract &amp; Payload Lineage
+            </span>
+            <span id="prdIdBadge" class="text-[10px] mono px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">—</span>
+          </div>
+          <div id="prdCardBody" class="text-xs text-slate-300 space-y-1.5"></div>
+        </div>
+
+        <!-- Provenance Card 2: Code Module & Git Patch Diff Inspector -->
+        <div id="codePatchCard" class="glass-card rounded-xl p-3 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-emerald-300">
+              💻 Code Module &amp; Patch Inspector
+            </span>
+            <span id="codeModuleBadge" class="text-[10px] mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">—</span>
+          </div>
+          <div id="codePatchBody" class="text-xs text-slate-300 space-y-1.5"></div>
+        </div>
+
+        <!-- Provenance Card 3: Native FalkorDB Graph Algorithms (PageRank, SPpaths, WCC, Betweenness) -->
+        <div id="algoCard" class="glass-card rounded-xl p-3 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-amber-300">
+              📐 Native FalkorDB Graph Algorithms
+            </span>
+            <span class="text-[10px] mono text-slate-400">SPpaths · pageRank · WCC · betweenness</span>
+          </div>
+          <div id="algoCardBody" class="text-xs text-slate-300 space-y-2"></div>
+        </div>
+
+        <!-- Provenance Card 4: Ownership, On-Call Engineer & Runbook Escalation -->
+        <div id="oncallCard" class="glass-card rounded-xl p-3 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-teal-300">
+              🚨 Company Brain: Ownership, On-Call &amp; Runbook
+            </span>
+            <span id="teamBadge" class="text-[10px] mono px-2 py-0.5 rounded bg-teal-500/15 text-teal-300 border border-teal-500/30">—</span>
+          </div>
+          <div id="oncallCardBody" class="text-xs text-slate-300 space-y-1.5"></div>
+        </div>
+
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- TAB 2: PARAMETERIZED CYPHER EXECUTION TRACE (`ro_query`)          -->
+      <!-- ================================================================= -->
+      <div id="tabPane-trace" class="hidden flex-1 overflow-y-auto p-3.5 space-y-3">
+        <div class="glass-card rounded-xl p-3 border border-indigo-500/30">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-indigo-300">Zero LLM-Generated Cypher Guarantee</span>
+            <span class="text-[10px] mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+              Rule 2 &amp; Rule 3 Compliant
+            </span>
+          </div>
+          <p class="text-[11px] text-slate-300 mt-1 leading-relaxed">
+            Every read tool below executed via <code class="mono text-sky-300">graph.ro_query(cypher, params)</code> using fixed, parameterized Cypher templates. Only episodic memory writes use <code class="mono text-purple-300">graph.query()</code>.
+          </p>
+        </div>
+
+        <div id="cypherTraceList" class="space-y-2.5"></div>
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- TAB 3: INTERACTIVE MCP TOOL PLAYGROUND (`/api/mcp/call`)          -->
+      <!-- ================================================================= -->
+      <div id="tabPane-mcp" class="hidden flex-1 overflow-y-auto p-3.5 space-y-3">
+        <div class="glass-card rounded-xl p-3 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-indigo-300">Model Context Protocol (MCP) Tool Runner</span>
+            <span class="text-[10px] mono px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300">8 Tools Exposed</span>
+          </div>
+          <p class="text-[11px] text-slate-400">
+            Test any of the 8 parameterized FalkorTrace MCP tools directly against <code id="mcpGraphNameLabel" class="mono text-sky-300">falkortrace:killbill-prod</code>.
+          </p>
+
+          <div>
+            <label class="text-[10px] uppercase text-slate-400 font-semibold block mb-1">Select MCP Tool</label>
+            <select id="mcpToolSelect" onchange="populateMcpSampleArgs()"
+                    class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs mono text-indigo-300 focus:outline-none">
+              <option value="recall_past_findings">1. recall_past_findings(service, limit)</option>
+              <option value="inspect_ticket_and_prd_lineage">2. inspect_ticket_and_prd_lineage(ticket_id)</option>
+              <option value="trace_blast_radius">3. trace_blast_radius(service, depth)</option>
+              <option value="inspect_recent_patches">4. inspect_recent_patches(service, depth, hours)</option>
+              <option value="shortest_dependency_path">5. shortest_dependency_path(source_service, target_service)</option>
+              <option value="service_criticality_pagerank">6. service_criticality_pagerank(service)</option>
+              <option value="analyze_topology_islands_and_bridges">7. analyze_topology_islands_and_bridges(service)</option>
+              <option value="record_finding">8. record_finding(service, verdict, text, session)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="text-[10px] uppercase text-slate-400 font-semibold block mb-1">JSON Arguments (`arguments`)</label>
+            <textarea id="mcpArgsTextarea" rows="4"
+                      class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs mono text-slate-200 focus:outline-none focus:border-indigo-500"></textarea>
+          </div>
+
+          <button onclick="invokeMcpFromPlayground()"
+                  class="w-full py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition">
+            ⚡ Invoke MCP Tool (`/api/mcp/call`)
+          </button>
+        </div>
+
+        <div class="glass-card rounded-xl p-3 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase text-slate-400">MCP Tool Output &amp; Cypher Trace</span>
+            <span id="mcpLatencyBadge" class="text-[10px] mono text-emerald-400"></span>
+          </div>
+          <pre id="mcpOutputPre" class="text-[10px] mono text-slate-200 bg-slate-950 p-2.5 rounded-lg border border-slate-800 overflow-x-auto max-h-96 whitespace-pre-wrap">Click "Invoke MCP Tool" to inspect the live response...</pre>
+        </div>
+      </div>
+
+    </section>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- FALKORDB CLOUD / DOCKER RUNTIME CONNECTION MODAL                      -->
+  <!-- ===================================================================== -->
+  <div id="dbConfigModal" class="hidden fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div class="glass-card rounded-2xl max-w-md w-full p-5 border border-slate-700 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-bold text-white">Connect to FalkorDB Cloud (`app.falkordb.cloud/instances`)</h3>
+        <button onclick="closeDbModal()" class="text-slate-400 hover:text-white text-sm">✕</button>
+      </div>
+      <p class="text-xs text-slate-300 leading-relaxed">
+        Paste your instance endpoint from <a href="https://app.falkordb.cloud/instances" target="_blank" class="text-indigo-400 underline">app.falkordb.cloud/instances</a> (supports <code class="mono text-sky-300">r-xxxx.falkordb.cloud:port</code> or <code class="mono text-sky-300">falkors://...</code> URLs). Automatically falls back to <code class="mono text-emerald-300">falkordb-embedded-graphblas</code> if unreachable.
+      </p>
+      <div class="space-y-2.5 text-xs">
+        <div class="grid grid-cols-3 gap-2">
+          <div class="col-span-2">
+            <label class="text-[10px] uppercase text-slate-400 font-semibold block mb-1">Host / Endpoint or URL</label>
+            <input id="cfgHost" type="text" placeholder="r-xxxx.falkordb.cloud:51234" value="localhost" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 mono text-slate-200" />
+          </div>
+          <div>
+            <label class="text-[10px] uppercase text-slate-400 font-semibold block mb-1">Port</label>
+            <input id="cfgPort" type="number" value="6379" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 mono text-slate-200" />
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-[10px] uppercase text-slate-400 font-semibold block mb-1">Username</label>
+            <input id="cfgUser" type="text" value="falkordb" placeholder="falkordb" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 mono text-slate-200" />
+          </div>
+          <div>
+            <label class="text-[10px] uppercase text-slate-400 font-semibold block mb-1">Password</label>
+            <input id="cfgPass" type="password" placeholder="••••••" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 mono text-slate-200" />
+          </div>
+        </div>
+        <label class="flex items-center gap-2 text-slate-300 cursor-pointer pt-1">
+          <input id="cfgSsl" type="checkbox" class="accent-indigo-500" />
+          <span>Enable TLS / SSL (Auto-negotiated for `*.falkordb.cloud`)</span>
+        </label>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeDbModal()" class="px-3 py-1.5 rounded-lg bg-slate-800 text-xs text-slate-300">Cancel</button>
+        <button onclick="saveDbConfig()" class="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white">
+          Connect &amp; Auto-Seed Graph
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- APPLICATION JAVASCRIPT                                                -->
+  <!-- ===================================================================== -->
+  <script>
+    // Global State
+    let currentTenant = "killbill-prod";
+    let graphData = { nodes: [], edges: [] };
+    let nodePositions = {};
+    let lastTriageResult = null;
+    let activeScenarioId = 1;
+    let inspectedNode = null;
+
+    // SVG Pan & Zoom State
+    let viewScale = 1.0;
+    let viewTranslate = { x: 0, y: 0 };
+    let isPanning = false;
+    let panStart = { x: 0, y: 0 };
+    let draggedNodeId = null;
+
+    // Color Palette by Node Type
+    const NODE_STYLE = {
+      Client_Issue: { fill: "#451a03", stroke: "#f59e0b", text: "#fde68a", badge: "TICKET" },
+      Service:      { fill: "#082f49", stroke: "#38bdf8", text: "#e0f2fe", badge: "SERVICE" },
+      Code_Module:  { fill: "#064e3b", stroke: "#10b981", text: "#d1fae5", badge: "CODE" },
+      Requirement:  { fill: "#1e1b4b", stroke: "#818cf8", text: "#e0e7ff", badge: "PRD/SRD" },
+      Change:       { fill: "#4c0519", stroke: "#f43f5e", text: "#ffe4e6", badge: "PATCH" },
+      Finding:      { fill: "#3b0764", stroke: "#c084fc", text: "#f3e8ff", badge: "MEMORY" },
+      Runbook:      { fill: "#134e4a", stroke: "#2dd4bf", text: "#ccfbf1", badge: "RUNBOOK" },
+      Team:         { fill: "#0f172a", stroke: "#64748b", text: "#cbd5e1", badge: "TEAM" },
+      Person:       { fill: "#164e63", stroke: "#22d3ee", text: "#cffafe", badge: "ON-CALL" },
+    };
+
+    // Explicit Non-Overlapping Topology Coordinates for both Tenants
+    // Notice how Services stagger across X (210 -> 390 -> 230 -> 410 -> 240) so vertical DEPENDS_ON chains NEVER overlap!
+    const FIXED_LAYOUTS = {
+      "killbill-prod": {
+        // Column 1: Client Issues & Episodic Memory Findings
+        "TICKET-4902": { x: 80, y: 95 },
+        "TICKET-4908": { x: 80, y: 270 },
+        "TICKET-4915": { x: 80, y: 495 },
+        "TICKET-4920": { x: 80, y: 690 },
+
+        // Column 2 & 3: Staggered Multi-Hop Microservice DAG (Zero Vertical Line Overlap!)
+        "billing-edge-api":       { x: 235, y: 85,  hop: "HOP 0 · ENTRY" },
+        "subscription-service":   { x: 395, y: 155, hop: "HOP 1" },
+        "invoice-orchestrator":   { x: 235, y: 265, hop: "HOP 2 · BRIDGE" },
+        "proration-engine":       { x: 395, y: 355, hop: "HOP 3 · ROOT CAUSE" },
+        "dunning-scheduler":      { x: 235, y: 395, hop: "HOP 3 · ASYNC" },
+        "payment-gateway-router": { x: 235, y: 505, hop: "HOP 0 · WEBHOOK" },
+        "fx-settlement-service":  { x: 395, y: 525, hop: "HOP 1 · FX" },
+        "tax-ledger-adapter":     { x: 395, y: 625, hop: "HOP 4 · SINK" },
+        "audit-vault-archiver":   { x: 235, y: 690, hop: "WCC ISLAND" },
+
+        // Column 4: Recent Git Patches (Change nodes) & Java Code Modules
+        "3a11c09":                                    { x: 535, y: 65 },
+        "7b44e21":                                    { x: 535, y: 140 },
+        "4e90b12":                                    { x: 535, y: 275 },
+        "9f82d1a":                                    { x: 535, y: 365 },
+        "1c55f08":                                    { x: 535, y: 495 },
+
+        "BillingEdgeController.java":                 { x: 695, y: 75 },
+        "SubscriptionBillingApi.java":                { x: 695, y: 145 },
+        "DefaultInvoiceGenerator.java":               { x: 695, y: 215 },
+        "DiscountPolicyEvaluator.java":               { x: 695, y: 285 },
+        "FixedAndRecurringInvoiceItemGenerator.java": { x: 695, y: 365 },
+        "PaymentWebhookValidator.java":               { x: 695, y: 475 },
+        "FxRateLockEngine.java":                      { x: 695, y: 550 },
+        "TaxLedgerSettlementAdapter.java":            { x: 695, y: 630 },
+
+        // Column 5: PRD / SRD Requirements & Remediation Runbooks
+        "SRD-API-101":             { x: 885, y: 75 },
+        "PRD-SUB-102":             { x: 885, y: 155 },
+        "PRD-DISC-209":            { x: 885, y: 235 },
+        "SRD-BILL-08":             { x: 885, y: 295 },
+        "RB-EXPLAIN-DISCOUNT-209": { x: 885, y: 350 },
+        "PRD-INV-104":             { x: 885, y: 410 },
+        "RB-REVERT-PRORATION-104": { x: 885, y: 468 },
+        "SRD-PAY-301":             { x: 885, y: 530 },
+        "RB-PAYLOAD-ISO-301":      { x: 885, y: 588 },
+        "SRD-TAX-401":             { x: 885, y: 650 },
+
+        // Column 6: Owning Teams & On-Call Engineers
+        "Edge-Platform-Team":      { x: 1045, y: 95 },
+        "@vikram-sen":             { x: 1045, y: 155 },
+        "Core-Billing-Team":       { x: 1045, y: 285 },
+        "@meera-nair":             { x: 1045, y: 345 },
+        "Payments-Treasury-Team":  { x: 1045, y: 475 },
+        "@rohan-kapoor":           { x: 1045, y: 535 },
+        "Compliance-Archive-Team": { x: 1045, y: 645 },
+        "@ananya-iyer":            { x: 1045, y: 705 },
+      },
+      "nexus-commerce": {
+        "NEXUS-701":                    { x: 90,   y: 160 },
+        "checkout-edge-gateway":        { x: 265,  y: 160, hop: "HOP 0 · ENTRY" },
+        "cart-pricing-service":         { x: 430,  y: 280, hop: "HOP 1" },
+        "inventory-reservation-engine": { x: 265,  y: 415, hop: "HOP 2 · ROOT CAUSE" },
+        "fraud-velocity-scorer":        { x: 430,  y: 545, hop: "HOP 3 · SINK" },
+        "88d12f0":                      { x: 535,  y: 465 },
+        "CheckoutEdgeHandler.go":       { x: 690,  y: 160 },
+        "PromoStackingCalculator.kt":   { x: 690,  y: 280 },
+        "StockHoldCoordinator.go":      { x: 690,  y: 415 },
+        "PRD-CART-501":                 { x: 885,  y: 280 },
+        "SRD-INV-602":                  { x: 885,  y: 415 },
+        "RB-NEXUS-TTL-602":             { x: 885,  y: 490 },
+        "Nexus-Checkout-Squad":         { x: 1045, y: 310 },
+        "@kabir-mehta":                 { x: 1045, y: 385 },
+      }
+    };
+
+    // Sample MCP arguments per tool
+    const MCP_SAMPLES = {
+      recall_past_findings: { service: "billing-edge-api", limit: 5 },
+      inspect_ticket_and_prd_lineage: { ticket_id: "TICKET-4902" },
+      trace_blast_radius: { service: "billing-edge-api", depth: 4 },
+      inspect_recent_patches: { service: "billing-edge-api", depth: 4, hours: 72 },
+      shortest_dependency_path: { source_service: "billing-edge-api", target_service: "proration-engine" },
+      service_criticality_pagerank: { service: "proration-engine" },
+      analyze_topology_islands_and_bridges: { service: "billing-edge-api" },
+      record_finding: {
+        service: "billing-edge-api",
+        verdict: "PATCH_REGRESSION",
+        text: "Manual MCP test finding on proration-engine",
+        session: "MCP-TEST-01",
+        root_cause_node: "proration-engine",
+        ticket_id: "TICKET-4902"
+      }
+    };
+
+    // =========================================================================
+    // INITIALIZATION & GRAPH LOADING
+    // =========================================================================
+    window.addEventListener("DOMContentLoaded", async () => {
+      setupSvgInteractions();
+      populateMcpSampleArgs();
+      await loadTenantGraph(currentTenant);
+      await runScenario(1);
+    });
+
+    async function loadTenantGraph(tenantId) {
+      currentTenant = tenantId;
+      document.getElementById("mcpGraphNameLabel").textContent = `falkortrace:${tenantId}`;
+      const res = await fetch(`/api/graph?tenant_id=${encodeURIComponent(tenantId)}`);
+      const data = await res.json();
+      graphData = data;
+
+      // Update top DB badge
+      const fb = data.falkordb || {};
+      document.getElementById("dbModeText").textContent = `${fb.mode || "falkordb"} · ${data.graph_name}`;
+      document.getElementById("statNodeCount").textContent = (data.nodes || []).length;
+      document.getElementById("statEdgeCount").textContent = (data.edges || []).length;
+      document.getElementById("statFindingCount").textContent = (data.findings || []).length;
+
+      computeNodePositions();
+      renderGraphCanvas();
+    }
+
+    function computeNodePositions() {
+      const preset = FIXED_LAYOUTS[currentTenant] || {};
+      nodePositions = {};
+      let findingIdx = 0;
+
+      (graphData.nodes || []).forEach((n, idx) => {
+        if (preset[n.id]) {
+          nodePositions[n.id] = { ...preset[n.id] };
+        } else if (n.type === "Finding") {
+          nodePositions[n.id] = {
+            x: 82,
+            y: 195 + findingIdx * 62,
+            hop: "EPISODIC MEMORY"
+          };
+          findingIdx++;
+        } else {
+          nodePositions[n.id] = {
+            x: 160 + (idx % 5) * 180,
+            y: 120 + Math.floor(idx / 5) * 90
+          };
+        }
+      });
+    }
+
+    // =========================================================================
+    // SVG GRAPH RENDERER WITH CUBIC BEZIER CURVES & SEMANTIC LANES
+    // =========================================================================
+    function renderGraphCanvas() {
+      const laneGroup = document.getElementById("laneGuidesLayer");
+      const edgesLayer = document.getElementById("edgesLayer");
+      const nodesLayer = document.getElementById("nodesLayer");
+      laneGroup.innerHTML = "";
+      edgesLayer.innerHTML = "";
+      nodesLayer.innerHTML = "";
+
+      // 1. Render subtle Semantic Column Headers
+      const lanes = [
+        { x: 82,   title: "TICKETS & MEMORY" },
+        { x: 335,  title: "MULTI-HOP MICROSERVICE DAG" },
+        { x: 640,  title: "CODE MODULES & PATCHES" },
+        { x: 865,  title: "PRD / SRD & RUNBOOKS" },
+        { x: 1045, title: "TEAMS & ON-CALL" },
+      ];
+      lanes.forEach(l => {
+        const txt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        txt.setAttribute("x", l.x);
+        txt.setAttribute("y", 26);
+        txt.setAttribute("text-anchor", "middle");
+        txt.setAttribute("fill", "#475569");
+        txt.setAttribute("font-size", "9.5");
+        txt.setAttribute("font-weight", "700");
+        txt.setAttribute("letter-spacing", "0.08em");
+        txt.textContent = l.title;
+        laneGroup.appendChild(txt);
+      });
+
+      const hlNodes = new Set((lastTriageResult && lastTriageResult.highlight_nodes) || []);
+      const hlEdges = (lastTriageResult && lastTriageResult.highlight_edges) || [];
+      const isEdgeHighlighted = (u, v) => hlEdges.some(e => e.from === u && e.to === v);
+
+      // 2. Render Curved Directed Edges
+      (graphData.edges || []).forEach(edge => {
+        const p1 = nodePositions[edge.from];
+        const p2 = nodePositions[edge.to];
+        if (!p1 || !p2) return;
+
+        const active = isEdgeHighlighted(edge.from, edge.to);
+        const isViolation = edge.label && edge.label.includes("VIOLATES");
+        const isMemory = edge.label === "ABOUT";
+
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const cx1 = p1.x + dx * 0.45;
+        const cy1 = p1.y + dy * 0.1;
+        const cx2 = p1.x + dx * 0.55;
+        const cy2 = p2.y - dy * 0.1;
+        const dPath = `M ${p1.x} ${p1.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${p2.x} ${p2.y}`;
+
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", dPath);
+        path.setAttribute("fill", "none");
+
+        let stroke = "#1e293b";
+        let width = "1.4";
+        let marker = "url(#arrow-default)";
+
+        if (active) {
+          if (isViolation) {
+            stroke = "#f43f5e";
+            marker = "url(#arrow-danger)";
+          } else if (isMemory) {
+            stroke = "#c084fc";
+            marker = "url(#arrow-memory)";
+          } else {
+            stroke = "#818cf8";
+            marker = "url(#arrow-active)";
+          }
+          width = "2.8";
+          path.setAttribute("class", "edge-active-flow");
+        } else if (isViolation) {
+          stroke = "rgba(244, 63, 94, 0.55)";
+          width = "1.8";
+          marker = "url(#arrow-danger)";
+        } else if (hlNodes.size > 0) {
+          stroke = "rgba(30, 41, 59, 0.55)";
+        }
+
+        path.setAttribute("stroke", stroke);
+        path.setAttribute("stroke-width", width);
+        path.setAttribute("marker-end", marker);
+        edgesLayer.appendChild(path);
+
+        // Edge label pill for active edges or violation edges
+        if (active || isViolation) {
+          const mx = (p1.x + p2.x) / 2;
+          const my = (p1.y + p2.y) / 2 - 5;
+          const lbl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          lbl.setAttribute("x", mx);
+          lbl.setAttribute("y", my);
+          lbl.setAttribute("text-anchor", "middle");
+          lbl.setAttribute("fill", isViolation ? "#fda4af" : (isMemory ? "#e9d5ff" : "#c7d2fe"));
+          lbl.setAttribute("font-size", "8.5");
+          lbl.setAttribute("font-family", "JetBrains Mono, monospace");
+          lbl.setAttribute("font-weight", "600");
+          lbl.textContent = edge.label;
+          edgesLayer.appendChild(lbl);
+        }
+      });
+
+      // 3. Render Nodes as Rounded Pill Cards with Hop & Type Badges
+      (graphData.nodes || []).forEach(node => {
+        const pos = nodePositions[node.id];
+        if (!pos) return;
+
+        const style = NODE_STYLE[node.type] || NODE_STYLE.Service;
+        const isHighlighted = hlNodes.size === 0 || hlNodes.has(node.id);
+        const isActiveTarget = hlNodes.has(node.id);
+
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        g.setAttribute("transform", `translate(${pos.x}, ${pos.y})`);
+        g.setAttribute("class", `cursor-pointer transition-opacity ${isHighlighted ? "opacity-100" : "opacity-30"}`);
+
+        // Node drag & click handlers
+        g.addEventListener("mousedown", (e) => {
+          e.stopPropagation();
+          draggedNodeId = node.id;
+        });
+        g.addEventListener("click", (e) => {
+          e.stopPropagation();
+          inspectNode(node);
+        });
+
+        const boxW = node.type === "Code_Module" ? 176 : 148;
+        const boxH = 42;
+
+        // Node card rectangle
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("x", -boxW / 2);
+        rect.setAttribute("y", -boxH / 2);
+        rect.setAttribute("width", boxW);
+        rect.setAttribute("height", boxH);
+        rect.setAttribute("rx", "9");
+        rect.setAttribute("fill", style.fill);
+        rect.setAttribute("stroke", isActiveTarget ? "#ffffff" : style.stroke);
+        rect.setAttribute("stroke-width", isActiveTarget ? "2.4" : "1.4");
+        if (isActiveTarget) {
+          rect.setAttribute("class", "node-active-glow");
+        }
+        g.appendChild(rect);
+
+        // Optional Hop Badge on top of Service / Memory nodes
+        if (pos.hop) {
+          const hopRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          hopRect.setAttribute("x", -46);
+          hopRect.setAttribute("y", -boxH / 2 - 11);
+          hopRect.setAttribute("width", 92);
+          hopRect.setAttribute("height", 13);
+          hopRect.setAttribute("rx", "4");
+          hopRect.setAttribute("fill", pos.hop.includes("ROOT") ? "#be123c" : (pos.hop.includes("ISLAND") ? "#0e7490" : "#1e1b4b"));
+          hopRect.setAttribute("stroke", style.stroke);
+          hopRect.setAttribute("stroke-width", "0.8");
+          g.appendChild(hopRect);
+
+          const hopTxt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          hopTxt.setAttribute("x", 0);
+          hopTxt.setAttribute("y", -boxH / 2 - 2);
+          hopTxt.setAttribute("text-anchor", "middle");
+          hopTxt.setAttribute("fill", "#f8fafc");
+          hopTxt.setAttribute("font-size", "7.5");
+          hopTxt.setAttribute("font-family", "JetBrains Mono, monospace");
+          hopTxt.setAttribute("font-weight", "700");
+          hopTxt.textContent = pos.hop;
+          g.appendChild(hopTxt);
+        }
+
+        // Primary label
+        const title = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        title.setAttribute("x", 0);
+        title.setAttribute("y", -3);
+        title.setAttribute("text-anchor", "middle");
+        title.setAttribute("fill", style.text);
+        title.setAttribute("font-size", "10");
+        title.setAttribute("font-family", "JetBrains Mono, monospace");
+        title.setAttribute("font-weight", "700");
+        const maxLen = node.type === "Code_Module" ? 24 : 20;
+        title.textContent = node.label.length > maxLen ? node.label.slice(0, maxLen - 1) + "…" : node.label;
+        g.appendChild(title);
+
+        // Subtitle
+        const sub = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        sub.setAttribute("x", 0);
+        sub.setAttribute("y", 11);
+        sub.setAttribute("text-anchor", "middle");
+        sub.setAttribute("fill", "#94a3b8");
+        sub.setAttribute("font-size", "8.5");
+        const subStr = node.subtitle || style.badge;
+        sub.textContent = subStr.length > 24 ? subStr.slice(0, 23) + "…" : subStr;
+        g.appendChild(sub);
+
+        nodesLayer.appendChild(g);
+      });
+    }
+
+    // =========================================================================
+    // SVG PAN, ZOOM & NODE DRAG INTERACTIONS
+    // =========================================================================
+    function setupSvgInteractions() {
+      const container = document.getElementById("svgContainer");
+      const svg = document.getElementById("graphSvg");
+
+      container.addEventListener("wheel", (e) => {
+        e.preventDefault();
+        const factor = e.deltaY < 0 ? 1.1 : 0.9;
+        zoomGraph(factor);
+      }, { passive: false });
+
+      svg.addEventListener("mousedown", (e) => {
+        if (draggedNodeId) return;
+        isPanning = true;
+        panStart = { x: e.clientX - viewTranslate.x, y: e.clientY - viewTranslate.y };
+      });
+
+      window.addEventListener("mousemove", (e) => {
+        if (draggedNodeId) {
+          const rect = svg.getBoundingClientRect();
+          const scaleX = 1120 / rect.width;
+          const scaleY = 760 / rect.height;
+          const rawX = (e.clientX - rect.left) * scaleX;
+          const rawY = (e.clientY - rect.top) * scaleY;
+          nodePositions[draggedNodeId].x = (rawX - viewTranslate.x) / viewScale;
+          nodePositions[draggedNodeId].y = (rawY - viewTranslate.y) / viewScale;
+          renderGraphCanvas();
+        } else if (isPanning) {
+          viewTranslate.x = e.clientX - panStart.x;
+          viewTranslate.y = e.clientY - panStart.y;
+          applyViewportTransform();
+        }
+      });
+
+      window.addEventListener("mouseup", () => {
+        isPanning = false;
+        draggedNodeId = null;
+      });
+    }
+
+    function zoomGraph(factor) {
+      viewScale = Math.max(0.55, Math.min(2.2, viewScale * factor));
+      applyViewportTransform();
+    }
+
+    function resetGraphViewport() {
+      viewScale = 1.0;
+      viewTranslate = { x: 0, y: 0 };
+      applyViewportTransform();
+      computeNodePositions();
+      renderGraphCanvas();
+    }
+
+    function applyViewportTransform() {
+      const vp = document.getElementById("viewportGroup");
+      vp.setAttribute("transform", `translate(${viewTranslate.x}, ${viewTranslate.y}) scale(${viewScale})`);
+    }
+
+    // =========================================================================
+    // NODE INSPECTOR DRAWER
+    // =========================================================================
+    function inspectNode(node) {
+      inspectedNode = node;
+      document.getElementById("nodeInspector").classList.remove("hidden");
+      document.getElementById("inspTypeBadge").textContent = node.type;
+      document.getElementById("inspTitle").textContent = node.label;
+      document.getElementById("inspSubtitle").textContent = node.subtitle || "";
+      document.getElementById("inspJson").textContent = JSON.stringify(node.data || node, null, 2);
+
+      const triageBtn = document.getElementById("inspTriageBtn");
+      if (node.type === "Service") {
+        triageBtn.classList.remove("hidden");
+      } else {
+        triageBtn.classList.add("hidden");
+      }
+    }
+
+    function closeNodeInspector() {
+      document.getElementById("nodeInspector").classList.add("hidden");
+    }
+
+    async function triageInspectedService() {
+      if (!inspectedNode || inspectedNode.type !== "Service") return;
+      document.getElementById("serviceInput").value = inspectedNode.id;
+      document.getElementById("ticketInput").value = "";
+      closeNodeInspector();
+      await executeManualTriage();
+    }
+
+    // =========================================================================
+    // 6 JUDGE SCENARIOS & TRIAGE EXECUTION
+    // =========================================================================
+    async function runScenario(id) {
+      activeScenarioId = id;
+      for (let i = 1; i <= 6; i++) {
+        const btn = document.getElementById(`scen-${i}`);
+        if (btn) {
+          btn.classList.toggle("ring-2", i === id);
+          btn.classList.toggle("ring-indigo-400", i === id);
+        }
+      }
+
+      const presets = {
+        1: { service: "billing-edge-api",       ticket_id: "TICKET-4902", depth: 4, bypass_memory: true },
+        2: { service: "invoice-orchestrator",   ticket_id: "TICKET-4908", depth: 4, bypass_memory: true },
+        3: { service: "payment-gateway-router", ticket_id: "TICKET-4915", depth: 4, bypass_memory: true },
+        4: { service: "billing-edge-api",       ticket_id: "TICKET-4902", depth: 4, bypass_memory: false },
+        5: { service: "audit-vault-archiver",   ticket_id: "TICKET-4920", depth: 4, bypass_memory: true },
+        6: { service: "quantum-ledger-v9",      ticket_id: "",            depth: 4, bypass_memory: true },
+      };
+
+      const cfg = presets[id];
+      // For Scenario 4 (Memory Recall), ensure Scenario 1 has been recorded at least once
+      if (id === 4 && (graphData.findings || []).length === 0) {
+        await fetch("/api/triage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tenant_id: currentTenant,
+            service: "billing-edge-api",
+            ticket_id: "TICKET-4902",
+            depth: 4,
+            bypass_memory: true,
+          }),
+        });
+      }
+
+      document.getElementById("serviceInput").value = cfg.service;
+      document.getElementById("ticketInput").value = cfg.ticket_id;
+      document.getElementById("depthSlider").value = cfg.depth;
+      document.getElementById("depthPill").textContent = `depth = ${cfg.depth} hops`;
+      document.getElementById("bypassMemoryCheck").checked = cfg.bypass_memory;
+
+      await performTriageCall({
+        tenant_id: currentTenant,
+        service: cfg.service,
+        ticket_id: cfg.ticket_id || null,
+        depth: cfg.depth,
+        bypass_memory: cfg.bypass_memory,
+      });
+    }
+
+    async function onDepthSliderChange(val) {
+      document.getElementById("depthPill").textContent = `depth = ${val} hops`;
+      await executeManualTriage();
+    }
+
+    async function executeManualTriage() {
+      const service = document.getElementById("serviceInput").value.trim();
+      const ticket = document.getElementById("ticketInput").value.trim();
+      const depth = parseInt(document.getElementById("depthSlider").value, 10);
+      const bypass = document.getElementById("bypassMemoryCheck").checked;
+
+      await performTriageCall({
+        tenant_id: currentTenant,
+        service,
+        ticket_id: ticket || null,
+        depth,
+        bypass_memory: bypass,
+      });
+    }
+
+    async function submitNaturalLanguageAsk(e) {
+      e.preventDefault();
+      const q = document.getElementById("nlAskInput").value.trim();
+      if (!q) return;
+      const depth = parseInt(document.getElementById("depthSlider").value, 10);
+      const res = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: q,
+          tenant_id: currentTenant,
+          depth,
+          bypass_memory: true,
+        }),
+      });
+      const data = await res.json();
+      if (data.tenant_id && data.tenant_id !== currentTenant) {
+        document.getElementById("tenantSelect").value = data.tenant_id;
+        currentTenant = data.tenant_id;
+      }
+      document.getElementById("serviceInput").value = data.queried_service || "";
+      document.getElementById("ticketInput").value = data.ticket_id || "";
+      lastTriageResult = data;
+      await loadTenantGraph(currentTenant);
+      renderTriageResult(data);
+    }
+
+    async function performTriageCall(payload) {
+      const res = await fetch("/api/triage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      lastTriageResult = data;
+      await loadTenantGraph(currentTenant);
+      renderTriageResult(data);
+    }
+
+    // =========================================================================
+    // 1-CLICK DEPTH=1 VS DEPTH=4 SIDE-BY-SIDE COMPARISON
+    // =========================================================================
+    async function runDepthComparison() {
+      const service = document.getElementById("serviceInput").value.trim() || "billing-edge-api";
+      const ticket_id = document.getElementById("ticketInput").value.trim() || null;
+
+      const res = await fetch("/api/compare-depth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenant_id: currentTenant, service, ticket_id, depth: 4, bypass_memory: true }),
+      });
+      const cmp = await res.json();
+      const s1 = cmp.shallow_depth_1;
+      const d4 = cmp.deep_depth_4;
+
+      switchRightTab("verdict");
+      const card = document.getElementById("depthCompareCard");
+      const content = document.getElementById("depthCompareContent");
+      card.classList.remove("hidden");
+
+      content.innerHTML = `
+        <div class="p-2.5 rounded-lg bg-slate-950/90 border border-slate-700 space-y-1.5">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-slate-300 mono">Shallow (depth = 1)</span>
+            <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">${s1.verdict}</span>
+          </div>
+          <p class="text-[11px] text-slate-400">Hops Inspected: <strong class="text-white mono">${(s1.services || []).join(" → ")}</strong></p>
+          <p class="text-[11px] text-amber-300 leading-snug">⚠️ Misses downstream regression in <code class="mono">proration-engine</code> (3 hops away)!</p>
+        </div>
+        <div class="p-2.5 rounded-lg bg-rose-950/35 border border-rose-500/50 space-y-1.5">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-rose-200 mono">Multi-Hop (depth = 4)</span>
+            <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-rose-500/25 text-rose-300">${d4.verdict}</span>
+          </div>
+          <p class="text-[11px] text-slate-300">Hops Inspected: <strong class="text-rose-200 mono">${(d4.breadcrumb_nodes || []).slice(0, 5).join(" → ")}</strong></p>
+          <p class="text-[11px] text-emerald-300 leading-snug">✓ Catches faulty patch <code class="mono">${d4.citations?.patch_sha || "9f82d1a"}</code> violating <code class="mono">${d4.citations?.requirement_id || "PRD-INV-104"}</code>!</p>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // RENDER TRIAGE RESULT ACROSS LEFT, CENTER & RIGHT PANES
+    // =========================================================================
+    function renderTriageResult(data) {
+      // 1. Update Total Latency & 5-Agent Swarm Handoff List
+      document.getElementById("totalLatencyBadge").textContent = `${data.total_latency_ms || 0} ms`;
+      const swarmEl = document.getElementById("agentSwarmList");
+      swarmEl.innerHTML = (data.agent_handoffs || []).map(h => {
+        const statusColor =
+          h.status === "blocked" ? "text-rose-400 border-rose-500/40 bg-rose-950/30" :
+          h.status === "memory_hit" ? "text-purple-300 border-purple-500/40 bg-purple-950/30" :
+          "text-emerald-300 border-emerald-500/30 bg-slate-900/90";
+        return `
+          <div class="p-2 rounded-lg border ${statusColor}">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-[11px]">${h.step}. ${h.agent}</span>
+              <span class="text-[10px] mono opacity-80">${h.latency_ms} ms</span>
+            </div>
+            <p class="text-[10px] text-slate-300 mt-0.5 leading-snug">${h.summary}</p>
+          </div>
+        `;
+      }).join("");
+
+      // 2. Update Center Breadcrumb Bar
+      const bcEl = document.getElementById("breadcrumbBanner");
+      const crumbs = data.breadcrumb_nodes || [];
+      bcEl.innerHTML = `<span class="text-slate-400 font-semibold uppercase text-[10px] shrink-0">Provenance Path:</span>` +
+        crumbs.map((c, idx) => `
+          <span class="px-2 py-0.5 rounded bg-slate-800 text-indigo-200 border border-slate-700 shrink-0">${c}</span>
+          ${idx < crumbs.length - 1 ? '<span class="text-indigo-400 font-bold">→</span>' : ''}
+        `).join("");
+
+      // 3. Update Primary Verdict Banner
+      const verdictColors = {
+        PATCH_REGRESSION:     "bg-rose-500/20 text-rose-300 border-rose-500/50",
+        WORKING_AS_PER_PRD:   "bg-emerald-500/20 text-emerald-300 border-emerald-500/50",
+        DATA_PAYLOAD_ISSUE:   "bg-amber-500/20 text-amber-300 border-amber-500/50",
+        UNMODELED_DEPENDENCY: "bg-cyan-500/20 text-cyan-300 border-cyan-500/50",
+        UNMODELED_OR_UNKNOWN: "bg-slate-700 text-slate-200 border-slate-500",
+      };
+      const vBadge = document.getElementById("verdictBadge");
+      vBadge.className = `text-xs mono font-extrabold uppercase px-2.5 py-1 rounded-lg border ${verdictColors[data.verdict] || verdictColors.WORKING_AS_PER_PRD}`;
+      vBadge.textContent = data.verdict;
+
+      document.getElementById("outcomeShapeBadge").textContent = `shape: ${data.outcome}`;
+      const gr = data.guardrail || { passed: true };
+      const grBadge = document.getElementById("guardrailBadge");
+      grBadge.textContent = gr.passed ? "🛡️ accepts(): PASSED" : "⚠️ accepts(): BLOCKED";
+
+      document.getElementById("verdictSummary").textContent = data.summary || "";
+
+      // Show 1-Click Live Hotfix button if PATCH_REGRESSION
+      const remBox = document.getElementById("remediateActionBox");
+      if (data.verdict === "PATCH_REGRESSION") {
+        remBox.classList.remove("hidden");
+      } else {
+        remBox.classList.add("hidden");
+      }
+
+      // 4. Populate Provenance Card 1: PRD/SRD & Payload
+      const cit = data.citations || {};
+      document.getElementById("prdIdBadge").textContent = cit.requirement_id || cit.finding_id || "N/A";
+      const prdBody = document.getElementById("prdCardBody");
+      if (data.outcome === "answered_from_memory" && data.memory_finding) {
+        const mf = data.memory_finding;
+        prdBody.innerHTML = `
+          <div class="p-2 rounded-lg bg-purple-950/30 border border-purple-500/40 space-y-1">
+            <div class="font-bold text-purple-200 mono">Episodic Finding: ${mf.id}</div>
+            <div>Learned At: <span class="mono text-slate-200">${mf.at}</span> · Prior Session: <span class="mono text-purple-300">${mf.session}</span></div>
+            <div>Root Cause Node: <span class="mono text-rose-300">${mf.root_cause_node}</span></div>
+          </div>
+        `;
+      } else if (cit.requirement_id) {
+        prdBody.innerHTML = `
+          <div class="font-semibold text-white">${cit.doc_type || "PRD"}: ${cit.requirement_title || cit.requirement_id}</div>
+          <p class="text-[11px] text-slate-300 bg-slate-950/80 p-2 rounded border border-slate-800 leading-relaxed">${cit.requirement_rule || ""}</p>
+          ${cit.payload_error ? `<div class="p-2 rounded bg-amber-950/40 border border-amber-500/40 text-amber-200 mono text-[11px]">Payload Error: ${cit.payload_error}</div>` : ""}
+          ${cit.reported_payload ? `<pre class="text-[10px] mono text-slate-300 bg-slate-950 p-2 rounded border border-slate-800 overflow-x-auto">${cit.reported_payload}</pre>` : ""}
+        `;
+      } else {
+        prdBody.innerHTML = `<p class="text-slate-400">No PRD/SRD lineage attached to this entity.</p>`;
+      }
+
+      // 5. Populate Provenance Card 2: Code Module & Git Patch Diff
+      document.getElementById("codeModuleBadge").textContent = cit.code_module || "None";
+      const codeBody = document.getElementById("codePatchBody");
+      if (cit.patch_sha) {
+        codeBody.innerHTML = `
+          <div class="flex items-center justify-between text-[11px]">
+            <span class="mono text-rose-300 font-bold">${cit.patch_version} (sha:${cit.patch_sha})</span>
+            <span class="mono text-slate-400">${cit.patch_author} · ${cit.patch_hours_ago}h ago</span>
+          </div>
+          <div class="text-[11px] text-slate-400 mono">${cit.filepath || ""} :: ${cit.method_name || ""}</div>
+          <pre class="text-[10px] mono bg-slate-950 p-2.5 rounded-lg border border-rose-500/30 text-rose-200 overflow-x-auto whitespace-pre-wrap">${cit.diff_snippet || ""}</pre>
+        `;
+      } else if (cit.code_module) {
+        codeBody.innerHTML = `
+          <div class="text-[11px] mono text-emerald-300">✓ ${cit.code_module} (compliant = true)</div>
+          <div class="text-[11px] text-slate-400 mono">${cit.filepath || ""}</div>
+        `;
+      } else {
+        codeBody.innerHTML = `<p class="text-slate-400">Zero code modules or recent patches traversed.</p>`;
+      }
+
+      // 6. Populate Provenance Card 3: Native FalkorDB Algorithms
+      const pr = data.pagerank || {};
+      const topo = data.topology_analysis || {};
+      const sp = data.shortest_path || {};
+      const algoBody = document.getElementById("algoCardBody");
+      if (pr.pagerank_score !== undefined) {
+        const leaders = (pr.estate_leaderboard || []).slice(0, 4).map(item => `
+          <div class="flex items-center justify-between text-[11px] mono py-0.5 border-b border-slate-800/60">
+            <span class="text-sky-300">${item.service}</span>
+            <span class="text-amber-300 font-semibold">PR=${item.score}</span>
+          </div>
+        `).join("");
+        algoBody.innerHTML = `
+          <div class="grid grid-cols-2 gap-2">
+            <div class="p-2 rounded bg-slate-950 border border-slate-800">
+              <div class="text-[10px] text-slate-400 uppercase">algo.pageRank</div>
+              <div class="text-sm font-bold text-amber-300 mono">${pr.pagerank_score} <span class="text-[10px] text-slate-400">(Rank #${pr.estate_rank})</span></div>
+            </div>
+            <div class="p-2 rounded bg-slate-950 border border-slate-800">
+              <div class="text-[10px] text-slate-400 uppercase">WCC &amp; Betweenness</div>
+              <div class="text-sm font-bold text-cyan-300 mono">Comp #${topo.component_id ?? 0} · BC=${topo.betweenness_score ?? 0}</div>
+            </div>
+          </div>
+          ${sp.hops ? `<div class="text-[11px] mono text-indigo-200 bg-indigo-950/30 p-2 rounded border border-indigo-500/30"><strong>algo.SPpaths:</strong> ${sp.hops.join(" → ")} (weight=${sp.weight})</div>` : ""}
+          <div class="pt-1">${leaders}</div>
+        `;
+      } else {
+        algoBody.innerHTML = `<p class="text-slate-400">Graph algorithms skipped (resolved from episodic memory or blocked by entity gate).</p>`;
+      }
+
+      // 7. Populate Provenance Card 4: Ownership, On-Call & Runbook
+      const oc = data.oncall || {};
+      document.getElementById("teamBadge").textContent = oc.team || cit.owning_team || "N/A";
+      const oncallBody = document.getElementById("oncallCardBody");
+      if (oc.team || cit.owning_team) {
+        oncallBody.innerHTML = `
+          <div class="flex items-center justify-between">
+            <span>On-Call Engineer: <strong class="mono text-cyan-300">${oc.oncall_handle || cit.oncall_engineer || "N/A"}</strong> (${oc.oncall_name || ""})</span>
+            <span class="mono text-[11px] text-indigo-300">${oc.slack_channel || cit.slack_channel || ""}</span>
+          </div>
+          ${cit.runbook_id ? `
+            <div class="p-2 rounded bg-teal-950/30 border border-teal-500/30 mt-1">
+              <div class="font-bold text-teal-300 mono text-[11px]">Runbook: ${cit.runbook_id}</div>
+              <p class="text-[11px] text-slate-300 mt-0.5 leading-snug">${cit.runbook_steps || ""}</p>
+            </div>
+          ` : ""}
+        `;
+      } else {
+        oncallBody.innerHTML = `<p class="text-slate-400">No on-call escalation required.</p>`;
+      }
+
+      // 8. Populate Tab 2: Parameterized Cypher Execution Trace
+      const traces = data.tool_trace || [];
+      document.getElementById("traceCountBadge").textContent = traces.length;
+      const traceList = document.getElementById("cypherTraceList");
+      traceList.innerHTML = traces.map((t, idx) => {
+        const modeStr = (t.mode || "ro_query").toUpperCase();
+        const isRo = modeStr.includes("RO");
+        const planStr = (t.explain_plan || []).join(" → ");
+        return `
+        <div class="glass-card rounded-xl p-3 space-y-1.5 border border-slate-800">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-white mono">${idx + 1}. ${t.tool}</span>
+              <span class="text-[10px] mono px-1.5 py-0.5 rounded ${isRo ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' : 'bg-purple-500/20 text-purple-300 border border-purple-500/40'}">
+                ${modeStr}
+              </span>
+            </div>
+            <span class="text-[11px] mono text-indigo-300 font-semibold">${t.latency_ms} ms · ${t.rows ?? 0} row(s)</span>
+          </div>
+          <div class="text-[10px] text-slate-400">Agent: <span class="text-slate-200 font-medium">${t.agent || "Swarm"}</span></div>
+          <div class="text-[10px] mono text-amber-200 bg-slate-950/90 px-2 py-1 rounded border border-slate-800">
+            $params = ${JSON.stringify(t.arguments || {})}
+          </div>
+          <pre class="text-[10px] mono text-sky-200 bg-slate-950 p-2 rounded border border-slate-800 overflow-x-auto whitespace-pre-wrap">${t.cypher}</pre>
+          ${planStr ? `<div class="text-[9.5px] mono text-slate-400 pt-0.5">GRAPH.EXPLAIN: ${planStr}</div>` : ""}
+        </div>
+      `}).join("");
+    }
+
+    // =========================================================================
+    // LIVE REMEDIATION, MEMORY CLEAR, TENANT SWITCH & MCP PLAYGROUND
+    // =========================================================================
+    async function triggerLiveHotfix() {
+      const cit = (lastTriageResult && lastTriageResult.citations) || {};
+      const service = cit.root_cause_service || "proration-engine";
+      const sha = cit.patch_sha || "9f82d1a";
+
+      await fetch("/api/remediate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenant_id: currentTenant, service, sha }),
+      });
+
+      // Re-run triage with bypass_memory=true so the user sees the graph flip to WORKING_AS_PER_PRD!
+      await performTriageCall({
+        tenant_id: currentTenant,
+        service: document.getElementById("serviceInput").value.trim(),
+        ticket_id: document.getElementById("ticketInput").value.trim() || null,
+        depth: 4,
+        bypass_memory: true,
+      });
+    }
+
+    async function clearEpisodicMemory() {
+      await fetch("/api/memory/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenant_id: currentTenant }),
+      });
+      await loadTenantGraph(currentTenant);
+    }
+
+    async function reseedCurrentTenant() {
+      await fetch("/api/seed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenant_id: currentTenant }),
+      });
+      document.getElementById("depthCompareCard").classList.add("hidden");
+      await loadTenantGraph(currentTenant);
+      await runScenario(1);
+    }
+
+    async function switchTenant(tenantId) {
+      currentTenant = tenantId;
+      document.getElementById("depthCompareCard").classList.add("hidden");
+      await loadTenantGraph(tenantId);
+      if (tenantId === "nexus-commerce") {
+        document.getElementById("serviceInput").value = "checkout-edge-gateway";
+        document.getElementById("ticketInput").value = "NEXUS-701";
+        await executeManualTriage();
+      } else {
+        await runScenario(1);
+      }
+    }
+
+    function switchRightTab(tab) {
+      ["verdict", "trace", "mcp"].forEach(t => {
+        document.getElementById(`tabPane-${t}`).classList.toggle("hidden", t !== tab);
+        const btn = document.getElementById(`tabBtn-${t}`);
+        if (t === tab) {
+          btn.className = "px-3 py-2 text-xs font-bold border-b-2 border-indigo-500 text-white transition flex items-center gap-1.5";
+        } else {
+          btn.className = "px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-1.5";
+        }
+      });
+    }
+
+    function populateMcpSampleArgs() {
+      const tool = document.getElementById("mcpToolSelect").value;
+      const sample = MCP_SAMPLES[tool] || {};
+      document.getElementById("mcpArgsTextarea").value = JSON.stringify(sample, null, 2);
+    }
+
+    async function invokeMcpFromPlayground() {
+      const tool_name = document.getElementById("mcpToolSelect").value;
+      let args = {};
+      try {
+        args = JSON.parse(document.getElementById("mcpArgsTextarea").value || "{}");
+      } catch (err) {
+        document.getElementById("mcpOutputPre").textContent = "Invalid JSON in arguments: " + err.message;
+        return;
+      }
+
+      const res = await fetch("/api/mcp/call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool_name, arguments: args, tenant_id: currentTenant }),
+      });
+      const data = await res.json();
+      document.getElementById("mcpLatencyBadge").textContent = data.trace ? `${data.trace.latency_ms} ms (${data.trace.mode || "ro_query"})` : "";
+      document.getElementById("mcpOutputPre").textContent = JSON.stringify(data, null, 2);
+      await loadTenantGraph(currentTenant);
+    }
+
+    function openDbModal() {
+      document.getElementById("dbConfigModal").classList.remove("hidden");
+    }
+
+    function closeDbModal() {
+      document.getElementById("dbConfigModal").classList.add("hidden");
+    }
+
+    async function saveDbConfig() {
+      const host = document.getElementById("cfgHost").value.trim() || "localhost";
+      const port = parseInt(document.getElementById("cfgPort").value, 10) || 6379;
+      const username = document.getElementById("cfgUser").value.trim() || null;
+      const password = document.getElementById("cfgPass").value.trim() || null;
+      const ssl = document.getElementById("cfgSsl").checked;
+
+      await fetch("/api/config/falkordb", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host, port, username, password, ssl }),
+      });
+      closeDbModal();
+      await loadTenantGraph(currentTenant);
+    }
+  </script>
+</body>
+</html>

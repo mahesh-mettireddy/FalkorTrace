@@ -1,0 +1,39 @@
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: falkortrace-db
+    ports:
+      - "6379:6379"
+      - "3000:3000"
+    volumes:
+      - falkordb_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  falkortrace-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: falkortrace-app
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - FALKORDB_HOST=falkordb
+      - FALKORDB_PORT=6379
+      - FALKORDB_USERNAME=${FALKORDB_USERNAME:-}
+      - FALKORDB_PASSWORD=${FALKORDB_PASSWORD:-}
+      - FALKORDB_SSL=${FALKORDB_SSL:-false}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  falkordb_data:
