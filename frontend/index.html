@@ -1195,6 +1195,7 @@
       const q = document.getElementById("nlAskInput").value.trim();
       if (!q) return;
       const depth = parseInt(document.getElementById("depthSlider").value, 10);
+      setTriageLoadingState(true);
       const res = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1209,15 +1210,50 @@
       if (data.tenant_id && data.tenant_id !== currentTenant) {
         document.getElementById("tenantSelect").value = data.tenant_id;
         currentTenant = data.tenant_id;
+        await loadTenantGraph(currentTenant);
       }
       document.getElementById("serviceInput").value = data.queried_service || "";
       document.getElementById("ticketInput").value = data.ticket_id || "";
       lastTriageResult = data;
-      await loadTenantGraph(currentTenant);
+      syncFindingNodeInMemory(data);
+      renderGraphCanvas();
       renderTriageResult(data);
     }
 
+    function setTriageLoadingState(isLoading) {
+      if (!isLoading) return;
+      const vBadge = document.getElementById("verdictBadge");
+      vBadge.className = "text-xs mono font-extrabold uppercase px-2.5 py-1 rounded-lg border bg-indigo-500/20 text-indigo-300 border-indigo-500/50 animate-pulse";
+      vBadge.textContent = "⚡ SWARM RUNNING...";
+    }
+
+    function syncFindingNodeInMemory(data) {
+      const mf = data.memory_finding;
+      if (!mf || !mf.id) return;
+      const svc = data.queried_service || "billing-edge-api";
+      graphData.findings = (graphData.findings || []).filter(f => !(f.service === svc && f.ticket_id === mf.ticket_id));
+      graphData.findings.unshift({ ...mf, service: svc });
+      // Ensure node & edge exist in graphData for immediate SVG rendering
+      graphData.nodes = (graphData.nodes || []).filter(n => n.type !== "Finding" || graphData.findings.some(f => f.id === n.id));
+      graphData.edges = (graphData.edges || []).filter(e => e.label !== "ABOUT" || graphData.findings.some(f => f.id === e.from));
+      if (!graphData.nodes.some(n => n.id === mf.id)) {
+        graphData.nodes.push({
+          id: mf.id,
+          label: mf.id,
+          type: "Finding",
+          subtitle: `Memory: ${mf.verdict}`,
+          data: mf,
+        });
+        graphData.edges.push({ from: mf.id, to: svc, label: "ABOUT" });
+      }
+      document.getElementById("statNodeCount").textContent = graphData.nodes.length;
+      document.getElementById("statEdgeCount").textContent = graphData.edges.length;
+      document.getElementById("statFindingCount").textContent = graphData.findings.length;
+      computeNodePositions();
+    }
+
     async function performTriageCall(payload) {
+      setTriageLoadingState(true);
       const res = await fetch("/api/triage", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1225,7 +1261,8 @@
       });
       const data = await res.json();
       lastTriageResult = data;
-      await loadTenantGraph(currentTenant);
+      syncFindingNodeInMemory(data);
+      renderGraphCanvas();
       renderTriageResult(data);
     }
 

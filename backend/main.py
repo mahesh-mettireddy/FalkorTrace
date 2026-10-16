@@ -28,7 +28,7 @@ from backend.agent import resolve_natural_language_query, run_multi_agent_triage
 from backend.db import ensure_tenant_seeded, get_db, get_live_dataset_snapshot
 from backend.mcp_server import call_mcp_tool, list_mcp_tools
 from backend.seed import TENANT_METADATA, seed_tenant
-from backend.tools import apply_hotfix_remediation, recall_past_findings
+from backend.tools import apply_hotfix_remediation, recall_all_tenant_findings
 
 
 @asynccontextmanager
@@ -156,13 +156,8 @@ def get_tenant_graph(tenant_id: str = Query(default="killbill-prod")) -> Dict[st
     # Read current dataset state (reflecting any live findings or hotfixes on both embedded and live FalkorDB)
     ds = get_live_dataset_snapshot(graph, tenant_id)
 
-    # Also query live findings from FalkorDB
-    live_findings: List[Dict[str, Any]] = []
-    for svc in ds["services"]:
-        f_list, _ = recall_past_findings(graph, svc["name"], limit=5)
-        for f in f_list:
-            f["service"] = svc["name"]
-            live_findings.append(f)
+    # Fetch all live findings in 1 single Cypher query instead of N queries
+    live_findings: List[Dict[str, Any]] = recall_all_tenant_findings(graph, limit=25)
 
     nodes: List[Dict[str, Any]] = []
     edges: List[Dict[str, Any]] = []

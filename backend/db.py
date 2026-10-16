@@ -877,6 +877,7 @@ class FalkorDBManager:
 
 
 _DB_MANAGER: Optional[FalkorDBManager] = None
+_VERIFIED_TENANTS: Dict[str, int] = {}
 
 
 def get_db() -> FalkorDBManager:
@@ -898,6 +899,15 @@ def ensure_tenant_seeded(db: Optional[FalkorDBManager] = None, tenant_id: str = 
     db = db or get_db()
     graph_name = f"falkortrace:{tenant_id}"
     graph = db.select_graph(graph_name)
+
+    if not hasattr(graph, "_dataset") and tenant_id in _VERIFIED_TENANTS:
+        return {
+            "status": "ready",
+            "tenant_id": tenant_id,
+            "graph_name": graph_name,
+            "service_count": _VERIFIED_TENANTS[tenant_id],
+        }
+
     try:
         res = graph.ro_query("MATCH (n:Service) RETURN count(n) LIMIT 1")
         rows = res.result_set
@@ -906,8 +916,11 @@ def ensure_tenant_seeded(db: Optional[FalkorDBManager] = None, tenant_id: str = 
         count = 0
 
     if count == 0:
-        return seed_tenant(db, tenant_id)
+        res_seed = seed_tenant(db, tenant_id)
+        _VERIFIED_TENANTS[tenant_id] = res_seed.get("counts", {}).get("services", 9)
+        return res_seed
 
+    _VERIFIED_TENANTS[tenant_id] = count
     return {
         "status": "ready",
         "tenant_id": tenant_id,

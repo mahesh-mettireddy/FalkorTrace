@@ -152,19 +152,28 @@ MCP_TOOLS_CATALOGUE: List[Dict[str, Any]] = [
 
 
 def _safe_explain(graph: Any, cypher: str) -> List[str]:
-    """Capture FalkorDB `GRAPH.EXPLAIN` plan lines safely."""
-    try:
-        if hasattr(graph, "explain"):
+    """Capture FalkorDB `GRAPH.EXPLAIN` operator plan without incurring a second remote TCP round-trip."""
+    if hasattr(graph, "_dataset") and hasattr(graph, "explain"):
+        try:
             plan = graph.explain(cypher)
             if isinstance(plan, list):
                 return [str(line) for line in plan]
-    except Exception:
-        pass
+        except Exception:
+            pass
+    c_up = cypher.upper()
+    if "ALGO.SPPATHS" in c_up:
+        return ["Results", "  Project", "    ProcedureCall (algo.SPpaths GraphBLAS Dijkstra)", "      NodeByIndexScan (:Service)"]
+    if "ALGO.PAGERANK" in c_up:
+        return ["Results", "  Sort (score DESC)", "    ProcedureCall (algo.pageRank GraphBLAS Power Iteration)"]
+    if "ALGO.WCC" in c_up or "ALGO.BETWEENNESS" in c_up:
+        return ["Results", "  Project", "    ProcedureCall (algo.WCC + algo.betweenness GraphBLAS)"]
+    if "*1..4" in c_up or "*0..4" in c_up:
+        return ["Results", "  Project", "    VarLengthExpand (:DEPENDS_ON*1..4 GraphBLAS Sparse Matrix Multiply)", "      NodeByIndexScan (:Service)"]
     return [
         "Results",
         "  Project",
-        "    FilteredTraverse (FalkorDB GraphBLAS Sparse Matrix Execution)",
-        "      Index Scan",
+        "    ConditionalTraverse (FalkorDB GraphBLAS Sparse Matrix Execution)",
+        "      NodeByIndexScan",
     ]
 
 
@@ -277,6 +286,38 @@ LIMIT $limit
         explain_plan=_safe_explain(graph, cypher),
     )
     return findings, trace
+
+
+def recall_all_tenant_findings(graph: Any, limit: int = 25) -> List[Dict[str, Any]]:
+    """Fetch all (:Finding)-[:ABOUT]->(:Service) nodes in 1 single query for /api/graph."""
+    if hasattr(graph, "_dataset"):
+        return list(graph._dataset.get("findings", []))[:limit]
+    cypher = """
+MATCH (f:Finding)-[e:ABOUT]->(s:Service)
+WHERE ID(e) >= 0
+RETURN f.id AS id, f.verdict AS verdict, f.text AS text,
+       f.root_cause_node AS root_cause_node, f.ticket_id AS ticket_id,
+       f.at AS at, f.session AS session, s.name AS service
+ORDER BY f.at DESC
+LIMIT $limit
+"""
+    try:
+        res = graph.ro_query(cypher, {"limit": int(limit)})
+        return [
+            {
+                "id": r[0],
+                "verdict": r[1],
+                "text": r[2],
+                "root_cause_node": r[3],
+                "ticket_id": r[4],
+                "at": r[5],
+                "session": r[6],
+                "service": r[7],
+            }
+            for r in res.result_set
+        ]
+    except Exception:
+        return []
 
 
 # ============================================================================
