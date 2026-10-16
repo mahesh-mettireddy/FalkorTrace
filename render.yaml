@@ -10,11 +10,11 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: FALKORDB_HOST
-        sync: false
+        value: r-6jissuruar.instance-3zbnvvx0i.hc-7up0crkyn.ap-south-1.aws.f2e0a955bb84.cloud
       - key: FALKORDB_PORT
-        value: 6379
+        value: 53164
       - key: FALKORDB_USERNAME
-        sync: false
+        value: falkordb
       - key: FALKORDB_PASSWORD
         sync: false
       - key: FALKORDB_SSL

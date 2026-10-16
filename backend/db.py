@@ -762,9 +762,12 @@ class FalkorDBManager:
 
     def __init__(self) -> None:
         self.url: Optional[str] = os.getenv("FALKORDB_URL") or None
-        raw_host: str = os.getenv("FALKORDB_HOST", "localhost").strip()
-        self.port: int = int(os.getenv("FALKORDB_PORT", "6379"))
-        self.username: Optional[str] = os.getenv("FALKORDB_USERNAME") or None
+        raw_host: str = os.getenv(
+            "FALKORDB_HOST",
+            "r-6jissuruar.instance-3zbnvvx0i.hc-7up0crkyn.ap-south-1.aws.f2e0a955bb84.cloud",
+        ).strip()
+        self.port: int = int(os.getenv("FALKORDB_PORT", "53164"))
+        self.username: Optional[str] = os.getenv("FALKORDB_USERNAME", "falkordb") or "falkordb"
         self.password: Optional[str] = os.getenv("FALKORDB_PASSWORD") or None
         self.ssl: bool = os.getenv("FALKORDB_SSL", "false").lower() in ("true", "1", "yes")
 
@@ -797,7 +800,7 @@ class FalkorDBManager:
                 self.port = int(parts[1])
 
         self.host = h
-        if "falkordb.cloud" in self.host.lower() and not self.username:
+        if (".cloud" in self.host.lower() or "falkordb" in self.host.lower()) and not self.username:
             self.username = "falkordb"
 
     def _connect(self) -> None:
@@ -815,8 +818,9 @@ class FalkorDBManager:
                 except Exception as exc:
                     self._last_error = str(exc)
 
-            # 2. Try host/port connection (auto-testing both SSL and non-SSL for *.falkordb.cloud)
-            ssl_candidates = [self.ssl, not self.ssl] if "falkordb.cloud" in self.host.lower() else [self.ssl]
+            # 2. Try host/port connection (auto-testing both SSL and non-SSL for cloud instances)
+            is_cloud_host = self.host not in ("localhost", "127.0.0.1", "falkordb")
+            ssl_candidates = [self.ssl, not self.ssl] if is_cloud_host else [self.ssl]
             for ssl_flag in ssl_candidates:
                 try:
                     client = OfficialFalkorDB(
@@ -825,18 +829,14 @@ class FalkorDBManager:
                         username=self.username,
                         password=self.password,
                         ssl=ssl_flag,
-                        socket_timeout=3.0,
-                        socket_connect_timeout=2.5,
+                        socket_timeout=4.0,
+                        socket_connect_timeout=3.5,
                     )
                     test_graph = client.select_graph("falkortrace:healthcheck")
                     test_graph.ro_query("RETURN 1")
                     self._client = client
                     self.ssl = ssl_flag
-                    self._mode = (
-                        "falkordb-cloud"
-                        if self.host not in ("localhost", "127.0.0.1", "falkordb")
-                        else "falkordb-docker"
-                    )
+                    self._mode = "falkordb-cloud" if is_cloud_host else "falkordb-docker"
                     self._last_error = None
                     return
                 except Exception as exc:
