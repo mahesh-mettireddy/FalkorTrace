@@ -320,13 +320,28 @@ def get_tenant_graph(tenant_id: str = Query(default="killbill-prod")) -> Dict[st
         )
         edges.append({"from": rb["id"], "to": rb["requirement_id"], "label": "REMEDIATES"})
 
+    for chk in ds.get("check_definitions", []):
+        nodes.append(
+            {
+                "id": chk["check_id"],
+                "label": chk["check_id"],
+                "type": "CheckDefinition",
+                "subtitle": f"Verifier ({chk['check_version']})",
+                "data": chk,
+            }
+        )
+        edges.append({"from": chk["target_module"], "to": chk["check_id"], "label": "VERIFIED_BY"})
+        edges.append({"from": chk["requirement_id"], "to": chk["check_id"], "label": "CHECKED_BY"})
+
     for f in live_findings:
+        val_state = f.get("validity_state", "VALID")
         nodes.append(
             {
                 "id": f["id"],
-                "label": f["id"],
+                "label": f["id"] if val_state == "VALID" else f"{f['id']} (STALE)",
                 "type": "Finding",
-                "subtitle": f"Memory: {f['verdict']}",
+                "subtitle": f"Memory ({val_state}): {f['verdict']}",
+                "validity_state": val_state,
                 "data": f,
             }
         )

@@ -1,25 +1,25 @@
 # FalkorTrace — Master System Architecture & FalkorDB Design Document
 
-**Project:** FalkorTrace — Multi-Agent Graph Triage & Company Brain  
+**Project:** FalkorTrace — Graph-Guided Software Investigation, Sandboxed Verification & Version-Aware Agent Memory  
 **Event:** WeMakeDevs x FalkorDB Hackathon (*"Graph Hacks: Context for AI Agents"*, Oct 15–18, 2026)  
 **Team:** LeoForge (`YVSBFW` | Leader: Mahesh Babu Metti Reddy / `@maheshmettireddy`)  
 **Tracks Entered:** Track 01 (*Agents That Act on Connected Data*), Track 02 (*Agent Memory & Coordination*), Track 03 (*Company Brain*) + Side Prize (*Best Blog Post*)
 
 ---
 
-## 1. Executive Architectural Vision: Why FalkorDB Is the Engine, Not a Sidecar
+## 1. Executive Architectural Vision: Why FalkorDB Is the Core Engine of a Closed-Loop Verifier
 
-Enterprise incident and SDLC triage is fundamentally a **connected-data problem**, not a text-similarity problem. When an enterprise customer reports a production billing anomaly (modeled on **Kill Bill**, the open-source Java subscription and invoicing platform), an engineer must answer five interconnected questions simultaneously:
+Enterprise incident and SDLC triage is fundamentally a **connected-data and executable-verification problem**, not a text-similarity problem. When an enterprise customer reports a production billing anomaly (modeled on **Kill Bill**, the open-source Java subscription and invoicing platform), an engineering agent must answer five interconnected questions simultaneously:
 
-1. **Episodic & Procedural Memory (Track 02):** *Have we investigated this service recently, what did we find in prior sessions, and what is the approved runbook?*
-2. **Contract vs. Implementation Lineage (Track 03):** *Does the customer's reported behavior violate a Product/System Requirement (`PRD`/`SRD`), or is the system working strictly as designed (`WORKING_AS_PER_PRD`)?*
-3. **Multi-Hop Blast Radius & Patch Provenance (Track 01):** *If the top-level API (`billing-edge-api`) looks clean at Depth 1, did a recent commit (`:Change`) 3 or 4 hops downstream (`proration-engine`) modify a Java class (`FixedAndRecurringInvoiceItemGenerator.java`) and break compliance (`PATCH_REGRESSION`)?*
-4. **Payload Schema Validation (Track 01 & 03):** *Did the client send a malformed webhook payload (`DATA_PAYLOAD_ISSUE`) that was rightly rejected by a compliant validator?*
+1. **Multi-Hop Candidate Narrowing (Track 01):** *If the top-level API (`billing-edge-api`) looks clean at Depth 1, which downstream services (`subscription-service` $\rightarrow$ `invoice-orchestrator` $\rightarrow$ `proration-engine`) and recent commits (`:Change`) sit in the 1..4 hop blast radius?*
+2. **Graph-Guided Verification Check Selection & Execution (Track 01 & 03):** *Which allowlisted verification check (`(:CheckDefinition)-[:TARGETS]->(:Code_Module)`) tests the candidate module against its independent requirement specification (`(:CheckDefinition)-[:VERIFIES]->(:Requirement)`), and does executing that check against the active `ArtifactVersion` (`sha:9f82d1a` vs `sha:7c31b09`) reproduce the failure (`expected=$30.00` vs `observed=$45.00`)?*
+3. **Version-Aware Investigation Memory & Applicability Gate (Track 02):** *Have we verified this exact `(tenant_id, service, input_fingerprint, artifact_sha, req_version, check_version)` before? If another ticket arrives on the same service with different input parameters (`TICKET-4905` Day 29 boundary or `TICKET-4906` invalid plan code), or if the code artifact was rolled back (`sha:7c31b09`), how do we prevent stale or false diagnosis reuse while preserving historical audit trails?*
+4. **Payload Schema Validation vs. Contract Behavior (Track 01 & 03):** *Did the client send a malformed webhook payload (`DATA_PAYLOAD_ISSUE` verified by `CHK-WEBHOOK-ISO4217`), or is the system working strictly as designed (`WORKING_AS_PER_PRD` verified by `CHK-DISCOUNT-SEAT-50`)?*
 5. **Ownership & Structural Criticality (Track 01 & 03):** *Which service in the dependency chain carries the highest structural load (`algo.pageRank` & `algo.betweenness`), and which on-call engineer (`[:ONCALL_FOR]`) and subject-matter expert (`[:WORKED_ON]`) must be paged right now?*
 
-### Why Vector RAG & Relational Databases Fail ("The Remove-FalkorDB Test")
-- **Vector RAG** chunks documents into isolated embeddings. It cannot traverse `(:Client_Issue)-[:REPORTS_ON]->(:Service)-[:DEPENDS_ON*1..4]->(:Service)-[:IMPLEMENTED_BY]->(:Code_Module)<-[:MODIFIED]-(:Change)` while verifying `(:Code_Module)-[:IMPLEMENTS {compliant: false}]->(:Requirement)`. Instead, it hands disconnected text chunks to an LLM and forces the model to *guess* joins.
-- **FalkorDB** stores relationships as **sparse adjacency matrices** in RAM and compiles Cypher traversals into **GraphBLAS linear algebra operations** ($A \times B \times A^T$). Variable-length multi-hop traversals (`*1..4`), shortest-path routing (`algo.SPpaths`), centrality ranking (`algo.pageRank`, `algo.betweenness`), and island detection (`algo.WCC`) run in **sub-millisecond to low-millisecond latency** on every step of a multi-agent loop.
+### Why Single-Hop Retrieval Fails & Why Static Boolean Flags Are Insufficient
+- **Single-Hop Text Retrieval (`Lexical TF-IDF Baseline, k=3`)** scores isolated text chunks by lexical overlap. Even when given a **fair serialized fact corpus** containing every service, dependency edge, code module, commit, and PRD clause, single-hop retrieval surfaces chunks matching the entrypoint ticket (`billing-edge-api`) and misses the 3-hop downstream cause (`proration-engine`).
+- **Why Pre-Baked Graph Booleans Are Replaced by Sandboxed Verification:** Instead of reading a static `compliant: false` property, FalkorTrace uses FalkorDB to traverse the causal graph, select the mapped `CheckDefinition`, execute the deterministic sandbox runner in [`backend/verifier.py`](../backend/verifier.py) against the active `ArtifactVersion`, and record an `(:Observation)` node containing `run_id`, `artifact_sha`, `code_hash`, `expected_value`, and `observed_value`.
 
 ---
 
@@ -28,20 +28,21 @@ Enterprise incident and SDLC triage is fundamentally a **connected-data problem*
 ```mermaid
 flowchart TB
     subgraph UI["3-Pane Operations Dashboard (frontend/index.html)"]
-        P1["Left Pane: Scenario Presets, Depth Slider (1..4), Custom Triage & Hotfix Actions"]
-        P2["Center Pane: Interactive SVG Force/Layered Graph Canvas & Hop Breadcrumbs"]
-        P3["Right Pane: Verdict Banner, 5-Agent Swarm Timeline, MCP Trace & GRAPH.EXPLAIN Inspector"]
+        P1["Left Pane: Lexical TF-IDF Baseline (k=3)\nFair Serialized Fact Corpus"]
+        P2["Center Pane: Live FalkorDB Graph Engine\nInteractive SVG DAG, Simulated Rollback & Cypher Trace"]
+        P3["Right Pane: FalkorDB + Sandbox Verifier\nCheck Evidence, Memory Applicability Gate & accepts() Guard"]
     end
 
-    subgraph API["FastAPI Backend & MCP Server (backend/)"]
-        MAIN["FastAPI Router (main.py)\n/api/triage | /api/graph | /api/remediate | /api/seed"]
-        MCP["Model Context Protocol Server (mcp_server.py)\nStdio & REST Tool Schema Exposure"]
-        SWARM["Multi-Agent Orchestrator (agent.py)\n1. Entity Gate -> 2. Memory Agent -> 3. PRD/Payload Auditor\n-> 4. Topology & Patch Inspector -> 5. PageRank & Escalation Agent"]
-        GUARD["Post-Generation Hallucination Guardrail\naccepts(sentence, allowed_tokens)"]
-        TOOLS["8 Fixed Parameterized Cypher & Algorithm Tools (tools.py)\nNEVER LLM-written Cypher | Strict ro_query() for Reads"]
+    subgraph API["FastAPI Backend, Verifier & MCP Server (backend/)"]
+        MAIN["FastAPI Router (main.py)\n/api/triage | /api/benchmark | /api/remediate | /api/inject-fault"]
+        MCP["Model Context Protocol Server (mcp_server.py)\n12 Typed Parameterized Tools"]
+        SWARM["Dynamic Graph-Guided Orchestrator (agent.py)\n1. Entity Gate -> 2. Applicability Memory Gate -> 3. Lineage & Check Selector\n-> 4. Sandboxed Check Runner -> 5. PageRank & Escalation Coordinator"]
+        VERIFIER["Sandboxed Verification Runner (verifier.py)\nExecutes CHK-PRORATION-30-360, CHK-DISCOUNT-SEAT-50,\nCHK-WEBHOOK-ISO4217, CHK-TAX-ROUNDING, CHK-NEXUS-TTL"]
+        GUARD["Entity-Reference Guardrail\naccepts(sentence, allowed_tokens)"]
+        TOOLS["12 Parameterized Cypher, GraphBLAS & Check Tools (tools.py)\nStrict ro_query() for Reads | Controlled query() for Memory/Sim"]
     end
 
-    subgraph FALKOR["FalkorDB Multigraph Engine (Port 6379 / Cloud / GraphBLAS)"]
+    subgraph FALKOR["FalkorDB Multigraph Engine (v4.2.0 / Cloud / GraphBLAS)"]
         G1[("Graph: falkortrace:killbill-prod\n(SaaS Subscription & Invoicing)")]
         G2[("Graph: falkortrace:nexus-commerce\n(High-Frequency Checkout & Ledger)")]
     end
@@ -50,9 +51,10 @@ flowchart TB
     MCP <--> TOOLS
     MAIN --> SWARM
     SWARM --> TOOLS
+    TOOLS --> VERIFIER
     SWARM --> GUARD
-    TOOLS -->|"db.select_graph('falkortrace:' + tenant_id)\ngraph.ro_query() / graph.query() / graph.explain()"| G1
-    TOOLS -->|"Hardware-Isolated Multigraph"| G2
+    TOOLS -->|"db.select_graph('falkortrace:' + tenant_id)\ngraph.ro_query() / graph.query()"| G1
+    TOOLS -->|"Logical Multigraph Isolation"| G2
 ```
 
 ---
@@ -61,14 +63,14 @@ flowchart TB
 
 | FalkorDB Capability | How FalkorTrace Uses It | Track Alignment |
 | :--- | :--- | :--- |
-| **Multigraph Hardware Isolation (`db.select_graph`)** | Each enterprise tenant (`falkortrace:killbill-prod`, `falkortrace:nexus-commerce`) occupies an independent sparse-matrix graph namespace. Cross-tenant data leakage is structurally impossible. | **Track 02** (Separate memory per tenant) |
-| **Read-Only Execution Path (`graph.ro_query`)** | All 7 analytical tools execute exclusively via `GRAPH.RO_QUERY` (`graph.ro_query(cypher, params)`). Only episodic memory recording (`record_finding`) and live hotfix remediation use `graph.query()`. | **Track 01 & 02** (Safe high-concurrency agent reads) |
-| **Variable-Length Matrix Traversal (`*1..4`)** | `trace_blast_radius` and `inspect_recent_patches` traverse 1 to 4 hops across `:DEPENDS_ON` edges with relationship uniqueness guards (`WHERE ID(e) >= 0`), proving why `depth=1` misses deep regressions that `depth=4` catches. | **Track 01** (Multi-hop reasoning & path provenance) |
-| **Native Shortest Path (`CALL algo.SPpaths`)** | Computes the exact minimum-weight dependency chain (`weightProp: 'weight'`) between an upstream API service and a downstream failing engine. | **Track 01** (Graph algorithms as agent tools) |
-| **Native Centrality (`CALL algo.pageRank` & `CALL algo.betweenness`)** | Computes load-bearing criticality (`pageRank`) and bridge chokepoint scores (`betweenness`) across the service estate to prioritize incident severity and page the owning on-call engineer. | **Track 01 & 03** (Who owns what & blast criticality) |
-| **Native Component Analysis (`CALL algo.WCC`)** | Runs Weakly Connected Components (`algo.WCC`) to identify isolated architectural islands—powering the `not_in_the_graph` answer shape when a service exists in FalkorDB but has no dependency route to the incident. | **Track 01** (Structural graph awareness) |
-| **3-Tier Graph Memory (`:Finding`, `:Requirement`, `:Runbook`)** | Stores **Episodic Memory** (`:Finding` nodes with session & timestamp), **Semantic Memory** (PRDs, SRDs, Services, Code Modules), and **Procedural Memory** (`:Runbook` SOP nodes) in one graph. | **Track 02 & 03** (Episodic, semantic & procedural memory) |
-| **Query Execution Plan Telemetry (`GRAPH.EXPLAIN` & `run_time_ms`)** | Captures FalkorDB's internal algebraic execution plan (`Matrix Multiply`, `Conditional Traverse`, `Index Scan`) and sub-millisecond timing for every tool call, rendered live in the UI. | **All Tracks + Blog Prize** |
+| **Logical Multigraph Isolation (`db.select_graph`)** | Each enterprise tenant (`falkortrace:killbill-prod`, `falkortrace:nexus-commerce`) occupies an independent graph key gated by `validate_tenant_scope()`. | **Track 02** (Isolated memory per tenant) |
+| **Read-Only Execution Path (`graph.ro_query`)** | All analytical and check-selection tools execute exclusively via `GRAPH.RO_QUERY` (`graph.ro_query(cypher, params)`). Only memory persistence (`record_finding`) and simulated artifact mutations use `graph.query()`. | **Track 01 & 02** (Safe high-concurrency agent reads) |
+| **Variable-Length Matrix Traversal (`*1..4`)** | `trace_blast_radius` and `inspect_recent_patches` traverse 1 to 4 hops across `:DEPENDS_ON` edges, proving why `depth=1` triggers a bounded-horizon truncation warning while `depth=4` uncovers deep regressions. | **Track 01** (Multi-hop reasoning & path provenance) |
+| **Graph-Guided Check Selection (`:CheckDefinition`)** | `list_relevant_checks` traverses `(:Service)-[:IMPLEMENTED_BY]->(:Code_Module)-[:VERIFIED_BY]->(:CheckDefinition)` so the graph determines which sandboxed check (`run_approved_check`) to execute. | **Track 01 & 03** (Graph-guided verification) |
+| **Version-Aware Memory & Non-Destructive Invalidation (`:Finding`, `:Observation`)** | Stores `(:Finding)` and `(:Observation)` nodes stamped with `(input_fingerprint, artifact_sha, req_version, check_version)`. When an artifact changes, old findings are marked `validity_state = 'STALE_VERSION_MISMATCH'` rather than deleted. | **Track 02** (Version-aware agent memory) |
+| **Native Shortest Path (`CALL algo.SPpaths`)** | Computes the minimum-weight dependency chain (`weightProp: 'weight'`) between an upstream API service and a downstream failing engine. | **Track 01** (Graph algorithms as agent tools) |
+| **Native Centrality (`CALL algo.pageRank` & `CALL algo.betweenness`)** | Computes load-bearing criticality (`pageRank`) and bridge chokepoint scores (`betweenness`) across the service estate to page the owning on-call engineer. | **Track 01 & 03** (Who owns what & blast criticality) |
+| **Native Component Analysis (`CALL algo.WCC`)** | Runs Weakly Connected Components (`algo.WCC`) to identify isolated architectural islands—powering the `not_in_the_graph` answer shape when a service has no dependency route to the incident. | **Track 01** (Structural graph awareness) |
 
 ---
 
@@ -76,129 +78,85 @@ flowchart TB
 
 ### 4.1 Node Labels & Properties
 1. **`(:Client_Issue)`** — Customer-reported incident or billing ticket
-   - `id` (String, Indexed): e.g., `'TICKET-4902'`
-   - `title` (String): Summary of reported issue
-   - `client_name` (String): Enterprise customer name
-   - `client_tier` (String): `'Enterprise-Platinum'` | `'Enterprise-Gold'`
-   - `reported_service` (String): Entrypoint microservice reported by client
-   - `reported_payload` (String/JSON): Raw webhook or API payload snapshot
-   - `payload_valid` (Boolean): Structural & ISO schema validity status
-   - `payload_error` (String): Validation error diagnostic (if invalid)
-   - `expected_behavior` (String): What the client expected
-   - `actual_behavior` (String): What actually occurred
-   - `created_at` (String): ISO-8601 timestamp
-
+   - `id`, `title`, `client_name`, `client_tier`, `reported_service`, `reported_payload`, `payload_valid`, `payload_error`, `expected_behavior`, `actual_behavior`, `created_at`
 2. **`(:Service)`** — Production microservice in the estate
-   - `name` (String, Indexed): e.g., `'billing-edge-api'`, `'proration-engine'`
-   - `tier` (String): `'tier-0'` | `'tier-1'` | `'tier-2'`
-   - `language` (String): `'Java 21'` | `'Kotlin'` | `'Go'`
-   - `repo` (String): Git repository path
-   - `description` (String): Architectural responsibility
-
+   - `name`, `tier`, `language`, `repo`, `description`
 3. **`(:Code_Module)`** — Source class/module implementing a service
-   - `name` (String, Indexed): e.g., `'FixedAndRecurringInvoiceItemGenerator.java'`
-   - `filepath` (String): Full repo path
-   - `method_name` (String): Core method under audit
-   - `logic_summary` (String): Current implemented logic summary
-
-4. **`(:Requirement)`** — Product (PRD) or System (SRD) specification clause
-   - `id` (String, Indexed): e.g., `'PRD-INV-104'`, `'PRD-DISC-209'`, `'SRD-PAY-301'`
-   - `doc_type` (String): `'PRD'` | `'SRD'`
-   - `title` (String): Clause title
-   - `rule_text` (String): Authoritative specification contract
-   - `version` (String): Spec version (e.g., `'v3.4'`)
-
-5. **`(:Change)`** — Git commit / deployed patch decision
-   - `sha` (String, Indexed): e.g., `'9f82d1a'`
-   - `patch_version` (String): e.g., `'Patch-v4.12.2'`
-   - `summary` (String): Commit description
-   - `regressions_introduced` (Boolean): Whether the change broke PRD compliance
-   - `diff_snippet` (String): Key code diff showing the exact change
-   - `at` (String): ISO-8601 deployment timestamp
-   - `hours_ago` (Integer): Relative hours since deployment
-   - `author` (String): GitHub/Git handle of commit author
-
-6. **`(:Team)`** — Engineering squad
-   - `name` (String, Indexed): e.g., `'Core-Billing-Team'`
-   - `slack_channel` (String): e.g., `'#oncall-core-billing'`
-   - `pagerduty_schedule` (String): e.g., `'PD-BILL-PRIMARY'`
-
-7. **`(:Person)`** — Engineer / SRE / Author
-   - `name` (String): Full name
-   - `handle` (String, Indexed): e.g., `'@meera-nair'`, `'@arjun-rao'`
-   - `email` (String): Corporate email
-   - `role` (String): Engineering title
-
-8. **`(:Finding)`** — Persistent Episodic Agent Memory node
-   - `id` (String, Indexed): e.g., `'FIND-8821'`
-   - `verdict` (String): `'PATCH_REGRESSION'` | `'WORKING_AS_PER_PRD'` | `'DATA_PAYLOAD_ISSUE'`
-   - `text` (String): Synthesized root-cause finding with path provenance
-   - `root_cause_node` (String): Primary node responsible
-   - `ticket_id` (String): Associated ticket ID
-   - `at` (String): ISO-8601 timestamp when learned
-   - `session` (String): Agent session identifier
-
-9. **`(:Runbook)`** — Persistent Procedural Memory node
-   - `id` (String, Indexed): e.g., `'RB-REVERT-PRORATION'`
-   - `verdict_type` (String): Target verdict classification
-   - `title` (String): Playbook title
-   - `steps` (String): Actionable step-by-step remediation protocol
+   - `name`, `filepath`, `method_name`, `governed_field`, `active_artifact_sha`, `check_id`, `logic_summary`
+4. **`(:ArtifactVersion)`** — Versioned code artifact snapshot
+   - `id`, `module`, `service`, `version_tag`, `git_sha`, `code_hash`, `source_snippet`
+5. **`(:Requirement)`** — Product (PRD) or System (SRD) specification clause
+   - `id`, `doc_type`, `title`, `rule_text`, `version`, `check_id`
+6. **`(:CheckDefinition)`** — Allowlisted sandboxed verification check specification
+   - `id` (`CHK-PRORATION-30-360`, `CHK-DISCOUNT-SEAT-50`, `CHK-WEBHOOK-ISO4217`, `CHK-TAX-ROUNDING`, `CHK-NEXUS-TTL`), `check_version`, `target_module`, `target_service`, `requirement_id`, `requirement_version`, `description`
+7. **`(:Observation)`** — Recorded execution output of a sandboxed check run
+   - `id`, `run_id`, `check_id`, `check_version`, `case_id`, `target_module`, `target_service`, `requirement_id`, `requirement_version`, `artifact_sha`, `artifact_version`, `code_hash`, `expected_value`, `observed_value`, `status` (`PASS` / `FAIL`), `violation_reproduced`, `duration_ms`
+8. **`(:Change)`** — Git commit / deployed patch metadata
+   - `sha`, `patch_version`, `summary`, `diff_snippet`, `at`, `hours_ago`, `author`
+9. **`(:Finding)`** — Persistent Version-Aware Episodic Agent Memory node
+   - `id`, `verdict`, `text`, `root_cause_node`, `ticket_id`, `at`, `session`, `input_fingerprint`, `artifact_sha`, `req_version`, `check_version`, `observation_id`, `run_id`, `validity_state` (`VALID` | `STALE_VERSION_MISMATCH`), `superseded_by`
+10. **`(:Runbook)`**, **`(:Team)`**, **`(:Person)`** — Procedural playbooks, owning squads, and on-call engineers.
 
 ### 4.2 Directed Edge Types
 ```cypher
 (i:Client_Issue)-[:REPORTS_ON]->(s:Service)
-(up:Service)-[:DEPENDS_ON {kind: 'sync'|'async', weight: 1..5, critical: true|false}]->(down:Service)
+(up:Service)-[:DEPENDS_ON {kind: 'sync-grpc'|'async-kafka', weight: 1..5, critical: true|false}]->(down:Service)
 (s:Service)-[:IMPLEMENTED_BY]->(c:Code_Module)
-(c:Code_Module)-[:IMPLEMENTS {compliant: true|false, note: '...'}]->(r:Requirement)
+(c:Code_Module)-[:IMPLEMENTS {note: '...'}]->(r:Requirement)
+(c:Code_Module)-[:VERIFIED_BY]->(chk:CheckDefinition)
+(chk:CheckDefinition)-[:VERIFIES]->(r:Requirement)
+(c:Code_Module)-[:HAS_ARTIFACT]->(av:ArtifactVersion)
+(obs:Observation)-[:OBSERVED_ON]->(c:Code_Module)
 (ch:Change)-[:MODIFIED]->(c:Code_Module)
 (ch:Change)-[:DEPLOYED_TO]->(s:Service)
 (t:Team)-[:OWNS]->(s:Service)
 (p:Person)-[:MEMBER_OF]->(t:Team)
 (p:Person)-[:ONCALL_FOR {from: '...', to: '...'}]->(t:Team)
-(p:Person)-[:WORKED_ON {commits: 42, last_active: '...'}]->(s:Service)
+(p:Person)-[:WORKED_ON {commits: 42}]->(s:Service)
 (f:Finding)-[:ABOUT]->(s:Service)
 (rb:Runbook)-[:REMEDIATES]->(r:Requirement)
 ```
 
 ---
 
-## 5. Multi-Agent Triage Swarm & State Handoffs
+## 5. Dynamic Graph-Guided Triage & Verification Sequence
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant User as SRE / Support Engineer
-    participant Gate as Agent 0: Entity Resolution Gate
-    participant Mem as Agent 1: Episodic Memory Auditor
-    participant Aud as Agent 2: PRD & Payload Auditor
-    participant Topo as Agent 3: Blast Radius & Patch Inspector
-    participant Crit as Agent 4: Centrality & Escalation Coordinator
-    participant Guard as Hallucination Guardrail (accepts)
+    participant Gate as Step 1: Entity Resolution Gate
+    participant Mem as Step 2: Version-Aware Memory Gate
+    participant Topo as Step 3: Lineage & Candidate Narrowing
+    participant Ver as Step 4: Sandboxed Check Runner
+    participant Crit as Step 5: Centrality & Escalation
+    participant Guard as Entity-Ref Guardrail (accepts)
     participant DB as FalkorDB (falkortrace:{tenant})
 
     User->>Gate: Triage Request (service, ticket_id, depth, bypass_memory)
     Gate->>DB: ro_query: resolve_service(service)
     alt Service Not Found in Graph
         DB-->>Gate: 0 rows
-        Gate-->>User: Outcome: unknown_service (Zero downstream queries!)
+        Gate-->>User: Outcome: unknown_service (0 downstream queries!)
     else Service Resolved
-        Gate->>Mem: Handoff validated service_name
+        Gate->>Mem: inspect_ticket_and_prd_lineage + compute_input_fingerprint
         Mem->>DB: ro_query: recall_past_findings(service)
-        alt Memory Hit & bypass_memory == False
-            DB-->>Mem: Matching (:Finding) node
-            Mem-->>User: Outcome: answered_from_memory (~1ms cross-session recall)
-        else No Prior Memory (Fresh Investigation)
-            Mem->>Aud: Handoff for Ticket & PRD Lineage Audit
-            Aud->>DB: ro_query: inspect_ticket_and_prd_lineage(ticket_id)
-            Aud->>Topo: Handoff Ticket & Local PRD Compliance State
-            Topo->>DB: ro_query: trace_blast_radius(service, depth)
-            Topo->>DB: ro_query: inspect_recent_patches(service, depth, hours=72)
-            Topo->>DB: ro_query: shortest_dependency_path(service, root_cause_service)
-            Topo->>Crit: Handoff Candidate Verdict & Root-Cause Service
-            Crit->>DB: ro_query: service_criticality_pagerank(root_cause_service)
-            Crit->>DB: ro_query: analyze_topology_islands_and_bridges(service)
-            Crit->>DB: query: record_finding(service, verdict, text, session)
-            Crit->>Guard: Validate prose summary against allowed_tokens
+        Mem->>Mem: evaluate_memory_applicability(input_fp, active_artifact_sha, req_version)
+        alt Exact Fingerprint & Active Artifact Match (REUSE_APPLICABLE_OBSERVATION)
+            Mem-->>User: Outcome: answered_from_memory (~1ms verified reuse)
+        else Different Input (HYPOTHESIS_ONLY) or Stale SHA (INVALIDATED_STALE_VERSION) or Fresh
+            alt Invalid Client Payload Detected Locally
+                Mem->>Ver: Dynamic Branch: run_approved_check(CHK-WEBHOOK-ISO4217 / CHK-PRORATION-30-360)
+                Ver->>DB: query: record_finding(DATA_PAYLOAD_ISSUE, fingerprint)
+            else Multi-Hop Investigation Required
+                Mem->>Topo: ro_query: trace_blast_radius(depth) & inspect_recent_patches(depth)
+                Topo->>DB: ro_query: list_relevant_checks(candidate_service, module)
+                Topo->>Ver: run_approved_check(check_id, active_artifact_sha, payload)
+                Ver-->>Topo: Observation(run_id, expected_value, observed_value, status=PASS|FAIL)
+                Topo->>Crit: ro_query: shortest_dependency_path(SPpaths) & service_criticality_pagerank()
+                Crit->>DB: query: record_finding(verdict, fingerprint, observation_id)
+            end
+            Crit->>Guard: Validate entity references via accepts(sentence, allowed_tokens)
             Guard-->>User: Outcome: answered_with_path OR not_in_the_graph
         end
     end

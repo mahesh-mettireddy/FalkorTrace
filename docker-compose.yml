@@ -1,6 +1,6 @@
 services:
   falkordb:
-    image: falkordb/falkordb:latest
+    image: falkordb/falkordb:v4.2.0
     container_name: falkortrace-db
     ports:
       - "6379:6379"

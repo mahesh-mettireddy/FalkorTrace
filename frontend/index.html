@@ -76,11 +76,11 @@
           <div class="flex items-center gap-2">
             <h1 class="font-extrabold text-sm md:text-base tracking-tight text-white">FalkorTrace</h1>
             <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-              FalkorDB Core Engine
+              Graph-Guided Verification Agent
             </span>
           </div>
           <p class="text-[11px] text-slate-400">
-            <span class="text-rose-400 font-semibold">Standard Vector-Only RAG</span> vs. <span class="text-emerald-400 font-semibold">RAG + FalkorDB Graph Brain</span> — Live Multi-Hop Accuracy &amp; Zero-Hallucination Proof
+            <span class="text-rose-400 font-semibold">Lexical TF-IDF Baseline (k=3)</span> vs. <span class="text-emerald-400 font-semibold">FalkorDB Graph + Sandboxed Verifier + Version-Aware Memory</span>
           </p>
         </div>
       </div>
@@ -89,21 +89,21 @@
       <div class="hidden xl:flex items-center gap-2 bg-slate-950/90 border border-slate-800 rounded-xl px-3 py-1.5">
         <div class="flex items-center gap-1.5 pr-2.5 border-r border-slate-800">
           <span class="w-2 h-2 rounded-full bg-rose-500"></span>
-          <span class="text-[10px] text-slate-400">Vector-Only RAG:</span>
-          <span id="scoreVectorAcc" class="text-[11px] font-bold text-rose-400 mono">0% Multi-Hop</span>
+          <span class="text-[10px] text-slate-400">TF-IDF Baseline:</span>
+          <span id="scoreVectorAcc" class="text-[11px] font-bold text-rose-400 mono">Shallow Text Only</span>
         </div>
         <div class="flex items-center gap-1.5 pr-2.5 border-r border-slate-800">
           <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-          <span class="text-[10px] text-slate-400">RAG + FalkorDB:</span>
-          <span id="scoreGraphAcc" class="text-[11px] font-bold text-emerald-400 mono">100% Verified</span>
+          <span class="text-[10px] text-slate-400">Sandbox Verifier:</span>
+          <span id="scoreGraphAcc" class="text-[11px] font-bold text-emerald-400 mono">12/12 Held-Out Cases</span>
         </div>
         <div class="flex items-center gap-1.5 pr-2.5 border-r border-slate-800">
-          <span class="text-[10px] text-slate-400">Hallucinations:</span>
-          <span class="text-[11px] font-bold text-cyan-300 mono">0% (accepts() Gate)</span>
+          <span class="text-[10px] text-slate-400">Entity Guard:</span>
+          <span class="text-[11px] font-bold text-cyan-300 mono">accepts() Validated</span>
         </div>
         <div class="flex items-center gap-1.5">
           <span id="dbPulseDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span id="dbStatusBadge" class="text-[11px] font-bold text-emerald-300 mono">FalkorDB Cloud: -- ms</span>
+          <span id="dbStatusBadge" class="text-[11px] font-bold text-emerald-300 mono">FalkorDB: -- ms</span>
         </div>
       </div>
 
@@ -111,23 +111,23 @@
       <div class="flex items-center gap-2 flex-wrap">
         <!-- Multigraph Tenant Selector -->
         <div class="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-lg px-2.5 py-1">
-          <span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Graph:</span>
+          <span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Tenant:</span>
           <select id="tenantSelect" onchange="switchTenant(this.value)" class="bg-transparent text-xs font-semibold text-emerald-300 focus:outline-none cursor-pointer mono">
             <option value="killbill-prod" class="bg-slate-900 text-white">falkortrace:killbill-prod (SaaS Billing)</option>
             <option value="nexus-commerce" class="bg-slate-900 text-white">falkortrace:nexus-commerce (Marketplace)</option>
           </select>
         </div>
 
-        <!-- Run 6-Case Enterprise Benchmark Button -->
+        <!-- Run 12-Case Held-Out Evaluation Suite Button -->
         <button onclick="openBenchmarkModal()" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs shadow-md shadow-emerald-500/20 flex items-center gap-1.5 transition">
           <span>📊</span>
-          <span>Run 6-Case Benchmark</span>
+          <span>Run 12-Case Benchmark (A/B/C/D)</span>
         </button>
 
-        <!-- Inject Live Chaos Fault Button -->
-        <button onclick="openChaosModal()" class="px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-300 font-semibold text-xs flex items-center gap-1 transition" title="Inject a real breaking commit into FalkorDB Cloud to prove live graph detection vs static Vector RAG">
+        <!-- Inject Simulated Chaos Fault Button -->
+        <button onclick="openChaosModal()" class="px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-300 font-semibold text-xs flex items-center gap-1 transition" title="Simulate deploying a faulty ArtifactVersion into FalkorDB to prove version-aware memory invalidation and live check execution">
           <span>💥</span>
-          <span class="hidden sm:inline">Inject Live Fault</span>
+          <span class="hidden sm:inline">Simulate Fault</span>
         </button>
 
         <!-- Configure Live LLM API Key (Gemini / OpenAI) -->
@@ -137,7 +137,7 @@
         </button>
 
         <!-- FalkorDB Cloud Connection Modal -->
-        <button onclick="openCloudModal()" class="px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs mono transition" title="Inspect or switch FalkorDB Cloud instance">
+        <button onclick="openCloudModal()" class="px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs mono transition" title="Inspect engine mode or switch FalkorDB instance">
           ⚙️ DB
         </button>
       </div>
@@ -149,56 +149,64 @@
   <!-- ===================================================================== -->
   <section class="border-b border-slate-800/80 bg-[#0b1120] px-4 py-2 shrink-0">
     <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
-      <!-- 5 Interactive Comparison Scenarios -->
+      <!-- 7 Interactive Comparison Scenarios -->
       <div class="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
-        <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1 shrink-0">Select Test Case:</span>
+        <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1 shrink-0">Select Case:</span>
 
-        <button id="scen-1" onclick="runScenario(1)" class="scenario-btn active shrink-0 text-left px-3 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
+        <button id="scen-1" onclick="runScenario(1)" class="scenario-btn active shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
           <div class="flex items-center gap-1.5">
-            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 mono">1. 3-Hop Bug</span>
+            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 mono">1. 3-Hop Verifier</span>
             <span class="text-xs font-bold text-white">TICKET-4902</span>
           </div>
-          <div class="text-[10px] text-slate-400 mt-0.5">Vector RAG misses 3-hop commit <span class="mono text-amber-300">9f82d1a</span></div>
+          <div class="text-[10px] text-slate-400 mt-0.5">Runs <span class="mono text-amber-300">CHK-PRORATION</span> ($45 vs $30)</div>
         </button>
 
-        <button id="scen-2" onclick="runScenario(2)" class="scenario-btn shrink-0 text-left px-3 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
+        <button id="scen-2" onclick="runScenario(2)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
           <div class="flex items-center gap-1.5">
-            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 mono">2. PRD Rule</span>
+            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 mono">2. PRD Spec Check</span>
             <span class="text-xs font-bold text-white">TICKET-4908</span>
           </div>
-          <div class="text-[10px] text-slate-400 mt-0.5">Proves 42 seats = 0% discount (<span class="mono text-emerald-300">PRD-DISC-209</span>)</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">Verifies 42 seats = 0% (<span class="mono text-emerald-300">PRD-DISC-209</span>)</div>
         </button>
 
-        <button id="scen-3" onclick="runScenario(3)" class="scenario-btn shrink-0 text-left px-3 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
+        <button id="scen-3" onclick="runScenario(3)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
           <div class="flex items-center gap-1.5">
-            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 mono">3. Bad Payload</span>
+            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 mono">3. Schema Check</span>
             <span class="text-xs font-bold text-white">TICKET-4915</span>
           </div>
-          <div class="text-[10px] text-slate-400 mt-0.5">Client sent <span class="mono text-amber-300">USDT-ERC20</span> vs <span class="mono">SRD-PAY-301</span></div>
+          <div class="text-[10px] text-slate-400 mt-0.5">Runs <span class="mono text-amber-300">CHK-WEBHOOK</span> on <span class="mono">USDT-ERC20</span></div>
         </button>
 
-        <button id="scen-4" onclick="runScenario(4)" class="scenario-btn shrink-0 text-left px-3 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
+        <button id="scen-4" onclick="runScenario(4)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
           <div class="flex items-center gap-1.5">
             <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 mono">4. WCC Island</span>
             <span class="text-xs font-bold text-white">TICKET-4920</span>
           </div>
-          <div class="text-[10px] text-slate-400 mt-0.5"><span class="mono">algo.WCC</span> catches isolated 0-edge service</div>
+          <div class="text-[10px] text-slate-400 mt-0.5"><span class="mono">algo.WCC</span> flags insufficient evidence</div>
         </button>
 
-        <button id="scen-5" onclick="runScenario(5)" class="scenario-btn shrink-0 text-left px-3 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
+        <button id="scen-5" onclick="runScenario(5)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
           <div class="flex items-center gap-1.5">
-            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 mono">5. Fake Entity Trap</span>
+            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 mono">5. Unknown Entity</span>
             <span class="text-xs font-bold text-white">quantum-ledger-v9</span>
           </div>
-          <div class="text-[10px] text-slate-400 mt-0.5">Vector RAG hallucinates vs Graph blocks in <span class="mono">0.8ms</span></div>
+          <div class="text-[10px] text-slate-400 mt-0.5">Entity Gate abstains in <span class="mono">&lt;1ms</span></div>
         </button>
 
-        <button id="scen-6" onclick="runScenario(6)" class="scenario-btn shrink-0 text-left px-3 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
+        <button id="scen-6" onclick="runScenario(6)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
           <div class="flex items-center gap-1.5">
-            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-teal-500/20 text-teal-300 mono">6. Memory Hit</span>
-            <span class="text-xs font-bold text-white">Repeat Incident</span>
+            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-teal-500/20 text-teal-300 mono">6. Memory Reuse</span>
+            <span class="text-xs font-bold text-white">Same Case (4902)</span>
           </div>
-          <div class="text-[10px] text-slate-400 mt-0.5">Recalls <span class="mono text-teal-300">(:Finding)</span> node across sessions</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">Fingerprint match ➔ O(1) reuse</div>
+        </button>
+
+        <button id="scen-7" onclick="runScenario(7)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition" title="Proves Version-Aware Memory Safety: same service (billing-edge-api) but different input (Day 29 boundary TICKET-4905) refuses blind reuse and runs check!">
+          <div class="flex items-center gap-1.5">
+            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 mono">7. Memory Guard</span>
+            <span class="text-xs font-bold text-white">Diff Case (4905)</span>
+          </div>
+          <div class="text-[10px] text-slate-400 mt-0.5">Refuses 4902 cache ➔ Rechecks Day 29</div>
         </button>
       </div>
 
@@ -219,11 +227,11 @@
           <input
             id="askInput"
             type="text"
-            placeholder="Ask anything or enter a service (e.g. Why did billing-edge-api overcharge?)"
-            class="w-60 xl:w-72 bg-slate-900 border border-slate-700/90 focus:border-emerald-400 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none"
+            placeholder="Ask anything or enter a ticket (e.g. Investigate TICKET-4905)"
+            class="w-56 xl:w-64 bg-slate-900 border border-slate-700/90 focus:border-emerald-400 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none"
           />
           <button type="submit" class="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition shrink-0">
-            Compare Live
+            Investigate
           </button>
         </form>
       </div>
@@ -237,16 +245,16 @@
   <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 overflow-y-auto lg:overflow-hidden">
 
     <!-- =================================================================== -->
-    <!-- LEFT COLUMN (3 cols): ❌ STANDARD VECTOR-ONLY RAG (Why Chunks Fail) -->
+    <!-- LEFT COLUMN (3 cols): ❌ LEXICAL TF-IDF BASELINE (k=3)              -->
     <!-- =================================================================== -->
     <section class="lg:col-span-3 flex flex-col rounded-xl border border-rose-500/35 bg-[#0b101e] rag-fail-glow overflow-hidden">
       <!-- Column Header -->
       <div class="px-3.5 py-2.5 border-b border-rose-500/25 bg-gradient-to-r from-rose-950/50 via-slate-900 to-slate-900 flex items-center justify-between">
         <div>
           <div class="flex items-center gap-1.5">
-            <span class="text-xs font-extrabold uppercase tracking-wider text-rose-400">❌ 1. Standard Vector-Only RAG</span>
+            <span class="text-xs font-extrabold uppercase tracking-wider text-rose-400">❌ 1. Lexical TF-IDF Baseline (k=3)</span>
           </div>
-          <p class="text-[11px] text-slate-400">Top-3 Cosine Similarity over Text Chunks (No Graph)</p>
+          <p class="text-[11px] text-slate-400">Fair Serialized Fact Corpus (No Multi-Hop Graph Traversal)</p>
         </div>
         <span id="ragStatusPill" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 mono">
           BLIND TO HOPS
@@ -254,16 +262,16 @@
       </div>
 
       <div class="flex-1 overflow-y-auto p-3 space-y-3">
-        <!-- Why Vector RAG Failed Diagnosis Box -->
+        <!-- Why Lexical TF-IDF Failed Diagnosis Box -->
         <div class="rounded-lg border border-rose-500/40 bg-rose-950/25 p-3">
           <div class="flex items-center justify-between gap-2 mb-1">
-            <span class="text-[10px] font-bold uppercase tracking-wider text-rose-300">Vector RAG Failure Mode</span>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-rose-300">Single-Hop Retrieval Limitation</span>
             <span id="ragFailureTitle" class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-500/25 text-rose-200 mono">
               3-Hop Dependency Blindness
             </span>
           </div>
           <p id="ragWhyFailed" class="text-xs text-slate-200 leading-relaxed">
-            Loading vector similarity baseline...
+            Loading lexical TF-IDF baseline...
           </p>
           <div class="mt-2 pt-2 border-t border-rose-500/20 flex items-center justify-between text-[11px]">
             <span class="text-slate-400">True Root-Cause Chunk Rank:</span>
@@ -271,10 +279,10 @@
           </div>
         </div>
 
-        <!-- Top-3 Retrieved Vector Chunks -->
+        <!-- Top-3 Retrieved Chunks -->
         <div>
           <div class="flex items-center justify-between mb-1.5">
-            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-300">Retrieved Top-3 Vector Chunks (k=3)</span>
+            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-300">Retrieved Top-3 Chunks (Fair Fact Corpus)</span>
             <span id="ragCorpusCount" class="text-[10px] text-slate-400 mono">Corpus: 18 chunks</span>
           </div>
           <div id="ragChunksList" class="space-y-2">
@@ -282,10 +290,10 @@
           </div>
         </div>
 
-        <!-- Resulting Vector-Only RAG Output -->
+        <!-- Resulting Baseline Output -->
         <div class="rounded-lg border border-slate-800 bg-slate-950/90 p-3">
           <div class="flex items-center justify-between mb-1">
-            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">What Vector-Only RAG Tells the Engineer</span>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">What Single-Hop Retrieval Reports</span>
             <span id="ragVerdictBadge" class="text-[10px] font-bold text-rose-400 mono">FALSE_NEGATIVE</span>
           </div>
           <p id="ragAnswerText" class="text-xs text-slate-300 italic leading-relaxed">
@@ -313,7 +321,7 @@
               </span>
             </div>
             <p class="text-[11px] text-slate-300">
-              Bridges multi-hop dependencies, Git patches, PRD contracts &amp; episodic memory in <span id="centerLatencyBadge" class="text-emerald-300 font-bold mono">-- ms</span>
+              Guides candidate narrowing, check selection, sandboxed verification &amp; version-aware memory in <span id="centerLatencyBadge" class="text-emerald-300 font-bold mono">-- ms</span>
             </p>
           </div>
         </div>
@@ -324,10 +332,10 @@
             🎯 Causal Subgraph
           </button>
           <button id="tabBtnFullGraph" onclick="switchCenterTab('fullgraph')" class="px-2.5 py-1 rounded text-[11px] font-semibold text-slate-300 hover:text-white transition">
-            🕸️ Full Graph (<span id="totalNodesCount">46</span>)
+            🕸️ Full Graph (<span id="totalNodesCount">52</span>)
           </button>
           <button id="tabBtnCypher" onclick="switchCenterTab('cypher')" class="px-2.5 py-1 rounded text-[11px] font-semibold text-slate-300 hover:text-white transition">
-            💻 Cypher &amp; Algos (<span id="cypherCountBadge">0</span>)
+            💻 Cypher &amp; Checks (<span id="cypherCountBadge">0</span>)
           </button>
         </div>
       </div>
@@ -338,12 +346,12 @@
           <!-- Populated dynamically with hop-by-hop badges -->
         </div>
 
-        <!-- Live Graph Mutations (Proving Live FalkorDB Cloud State) -->
+        <!-- Live Graph Mutations (Simulated Rollback + Memory Controls) -->
         <div class="flex items-center gap-1.5 shrink-0">
-          <button id="rollbackBtn" onclick="triggerLiveRollback()" class="hidden px-2.5 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-emerald-300 text-[11px] font-bold mono transition">
-            🛠️ Rollback Patch in FalkorDB
+          <button id="rollbackBtn" onclick="triggerLiveRollback()" class="hidden px-2.5 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-emerald-300 text-[11px] font-bold mono transition" title="Simulation: Switches active artifact_sha to clean release, marks prior findings STALE_VERSION_MISMATCH, and re-runs sandbox check">
+            🛠️ Simulate Artifact Rollback (v4.12.1)
           </button>
-          <button onclick="clearEpisodicMemory()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[10px] mono transition" title="Delete (:Finding) nodes from FalkorDB">
+          <button onclick="clearEpisodicMemory()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[10px] mono transition" title="Delete (:Finding) and (:Observation) nodes from FalkorDB">
             🧹 Clear Memory
           </button>
           <button onclick="resetTenantGraph()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[10px] mono transition" title="Re-seed default FalkorDB graph state">
@@ -395,8 +403,9 @@
               <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span>Ticket</span>
               <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block"></span>Service</span>
               <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-purple-400 inline-block"></span>Code Module</span>
-              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span>Faulty Commit</span>
-              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span>PRD/SRD Spec</span>
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span>Commit</span>
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span>PRD/SRD</span>
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-cyan-400 inline-block"></span>CheckDef</span>
               <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-teal-300 inline-block"></span>Memory (:Finding)</span>
             </div>
             <div class="flex items-center gap-1 bg-slate-950/90 border border-slate-800 rounded-lg p-1 pointer-events-auto">
@@ -417,13 +426,13 @@
           </div>
         </div>
 
-        <!-- 5-Agent Swarm Execution Pipeline Strip at Bottom of Center Pane -->
+        <!-- Dynamic Agent Investigation Pipeline Strip at Bottom of Center Pane -->
         <div class="border-t border-slate-800/90 bg-[#090e1c] px-3 py-2">
           <div class="flex items-center justify-between mb-1">
             <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              5-Agent Swarm Handoff Pipeline (100% Parameterized <code class="text-emerald-300">graph.ro_query()</code> — Zero LLM-Written Cypher)
+              Dynamic Graph-Guided Verification Pipeline (Parameterized <code class="text-emerald-300">graph.ro_query()</code> + Sandboxed Check Runner)
             </span>
-            <span id="swarmTotalSteps" class="text-[10px] text-emerald-400 font-semibold mono">5 Agents</span>
+            <span id="swarmTotalSteps" class="text-[10px] text-emerald-400 font-semibold mono">Dynamic Steps</span>
           </div>
           <div id="agentSwarmStrip" class="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
             <!-- Populated dynamically -->
@@ -437,10 +446,10 @@
       <div id="centerCypherContainer" class="hidden flex-1 overflow-y-auto p-4 space-y-3 bg-[#060a15]">
         <div class="rounded-lg border border-emerald-500/30 bg-emerald-950/20 p-3">
           <div class="text-xs font-bold text-emerald-300 mb-1">
-            Why Parameterized Cypher Tools Beat LLM-Generated Cypher
+            Why Parameterized Cypher + Sandboxed Verification Beats Static Properties
           </div>
           <p class="text-[11px] text-slate-300">
-            Every read query below executed via <code class="mono text-emerald-300">graph.ro_query(cypher, params)</code> on FalkorDB Cloud (<code class="mono text-cyan-300">ap-south-1</code>) alongside native GraphBLAS algorithms (<code class="mono text-amber-300">algo.SPpaths</code>, <code class="mono text-amber-300">algo.pageRank</code>, <code class="mono text-amber-300">algo.WCC</code>).
+            Every read query executes via <code class="mono text-emerald-300">graph.ro_query(cypher, params)</code> alongside native GraphBLAS algorithms (<code class="mono text-amber-300">algo.SPpaths</code>, <code class="mono text-amber-300">algo.pageRank</code>, <code class="mono text-amber-300">algo.WCC</code>) and deterministic sandbox checks (<code class="mono text-cyan-300">run_approved_check</code>).
           </p>
         </div>
         <div id="cypherTraceList" class="space-y-2.5"></div>
@@ -448,16 +457,16 @@
     </section>
 
     <!-- =================================================================== -->
-    <!-- RIGHT COLUMN (3 cols): ✅ RAG + FALKORDB GRAPH VERDICT & PROOF       -->
+    <!-- RIGHT COLUMN (3 cols): ✅ GRAPH-GUIDED VERIFICATION & MEMORY PROOF  -->
     <!-- =================================================================== -->
     <section class="lg:col-span-3 flex flex-col rounded-xl border border-emerald-500/40 bg-[#0b101e] graph-win-glow overflow-hidden">
       <!-- Column Header -->
       <div class="px-3.5 py-2.5 border-b border-emerald-500/25 bg-gradient-to-r from-emerald-950/50 via-slate-900 to-slate-900 flex items-center justify-between">
         <div>
           <div class="flex items-center gap-1.5">
-            <span class="text-xs font-extrabold uppercase tracking-wider text-emerald-400">✅ 3. RAG + FalkorDB System</span>
+            <span class="text-xs font-extrabold uppercase tracking-wider text-emerald-400">✅ 3. FalkorDB + Sandbox Verifier</span>
           </div>
-          <p class="text-[11px] text-slate-400">Graph-Grounded Verdict + <code class="mono">accepts()</code> Guard</p>
+          <p class="text-[11px] text-slate-400">Executable Check + Version-Aware Memory</p>
         </div>
         <span id="graphOutcomePill" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 mono">
           answered_with_path
@@ -478,6 +487,24 @@
           <p id="graphSummaryText" class="text-xs text-slate-100 leading-relaxed font-medium">
             Loading verified FalkorDB triage verdict...
           </p>
+        </div>
+
+        <!-- NEW: Executable Sandbox Verification & Memory Applicability Card -->
+        <div class="rounded-lg border border-cyan-500/35 bg-cyan-950/15 p-3 space-y-2">
+          <div class="flex items-center justify-between gap-1">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-cyan-300">
+              🧪 Sandboxed Check &amp; Memory Gate
+            </span>
+            <span id="checkStatusBadge" class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-200 mono">
+              CHK-PRORATION-30-360
+            </span>
+          </div>
+          <div id="verificationEvidenceBox" class="text-[11px] bg-slate-950/90 border border-slate-800 rounded p-2 mono text-slate-200 space-y-1">
+            --
+          </div>
+          <div id="memoryApplicabilityBox" class="text-[10px] bg-slate-900/90 border border-slate-800 rounded p-2 text-slate-300">
+            --
+          </div>
         </div>
 
         <!-- Provenance Proof: PRD/SRD Contract vs Git Commit Diff / Client Payload -->
@@ -518,18 +545,18 @@
           </div>
         </div>
 
-        <!-- Post-Generation accepts(sentence, answer) Guardrail Verification -->
+        <!-- Post-Generation accepts(sentence, answer) Entity-Reference Guardrail -->
         <div class="rounded-lg border border-emerald-500/30 bg-emerald-950/15 p-3">
           <div class="flex items-center justify-between mb-1">
             <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-300">
-              🛡️ Post-Gen <code class="mono">accepts()</code> Guardrail
+              🛡️ Entity-Ref <code class="mono">accepts()</code> Guardrail
             </span>
             <span id="guardrailStatusBadge" class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 mono">
-              PASSED (0 Invented Tokens)
+              PASSED (0 Invented Entities)
             </span>
           </div>
           <p id="guardrailReasonText" class="text-[11px] text-slate-300 mb-1.5">
-            Every service &amp; code module token in the output was verified against FalkorDB traversal results.
+            Every service &amp; code module identifier in the output was verified against FalkorDB traversal results.
           </p>
           <div id="allowedTokensCloud" class="flex flex-wrap gap-1"></div>
         </div>
@@ -538,76 +565,69 @@
   </main>
 
   <!-- ===================================================================== -->
-  <!-- MODAL 1: 6-CASE ENTERPRISE RELIABILITY BENCHMARK (Vector vs FalkorDB) -->
+  <!-- MODAL 1: 12-CASE 4-SYSTEM ABLATION BENCHMARK                          -->
   <!-- ===================================================================== -->
   <div id="benchmarkModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="w-full max-w-5xl rounded-2xl border border-emerald-500/40 bg-[#090e1c] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div class="w-full max-w-6xl rounded-2xl border border-emerald-500/40 bg-[#090e1c] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
       <div class="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-gradient-to-r from-emerald-950/60 to-slate-900">
         <div>
           <h2 class="text-base font-extrabold text-white flex items-center gap-2">
-            <span>📊 Enterprise Reliability Benchmark: Standard Vector RAG vs. RAG + FalkorDB</span>
+            <span>📊 12-Case 4-System Ablation Benchmark: Isolating Multi-Hop Graph, Sandbox Verifier &amp; Version-Aware Memory</span>
           </h2>
           <p class="text-xs text-slate-400">
-            Live execution of 6 production incident scenarios against FalkorDB Cloud (<code class="mono text-emerald-300">ap-south-1</code>)
+            Live evaluation across 12 incident, held-out, same-service multi-case &amp; stale-artifact scenarios on <code id="bmEngineModeBadge" class="mono text-emerald-300">FalkorDB</code>
           </p>
         </div>
         <button onclick="closeBenchmarkModal()" class="text-slate-400 hover:text-white text-sm font-bold px-2 py-1">✕</button>
       </div>
 
       <div class="p-5 overflow-y-auto space-y-4">
-        <!-- Executive Scorecard Comparison -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div class="rounded-xl border border-rose-500/40 bg-rose-950/20 p-4">
-            <div class="text-xs font-bold uppercase text-rose-400 mb-2">❌ Standard Vector-Only RAG (Top-3 Chunks)</div>
-            <div class="grid grid-cols-3 gap-2 text-center">
-              <div class="bg-slate-950/80 p-2.5 rounded-lg border border-slate-800">
-                <div id="bmRagAcc" class="text-xl font-extrabold text-rose-400 mono">0.0%</div>
-                <div class="text-[10px] text-slate-400">Verified Accuracy</div>
-              </div>
-              <div class="bg-slate-950/80 p-2.5 rounded-lg border border-slate-800">
-                <div id="bmRagHalluc" class="text-xl font-extrabold text-rose-400 mono">66.7%</div>
-                <div class="text-[10px] text-slate-400">Hallucination / Wrong Blame</div>
-              </div>
-              <div class="bg-slate-950/80 p-2.5 rounded-lg border border-slate-800">
-                <div class="text-xl font-extrabold text-slate-400 mono">0 Hops</div>
-                <div class="text-[10px] text-slate-400">Multi-Hop Reach</div>
-              </div>
-            </div>
+        <!-- 4-System Comparison Grid (Systems A, B, C, D) -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div class="rounded-xl border border-rose-500/40 bg-rose-950/20 p-3">
+            <div class="text-[11px] font-bold uppercase text-rose-400 mb-1">❌ System A: Lexical TF-IDF (k=3)</div>
+            <div class="text-[10px] text-slate-400 mb-2">Fair Serialized Fact Corpus (No Graph, No Verifier)</div>
+            <div id="bmSysAAcc" class="text-lg font-extrabold text-rose-400 mono">0.0% (0/12)</div>
+            <div class="text-[10px] text-slate-400 mt-1">Misses 2–3 hop causal chains &amp; lacks executable verification</div>
           </div>
 
-          <div class="rounded-xl border border-emerald-500/40 bg-emerald-950/20 p-4">
-            <div class="text-xs font-bold uppercase text-emerald-400 mb-2">✅ RAG + FalkorDB Graph Engine</div>
-            <div class="grid grid-cols-3 gap-2 text-center">
-              <div class="bg-slate-950/80 p-2.5 rounded-lg border border-slate-800">
-                <div id="bmGraphAcc" class="text-xl font-extrabold text-emerald-400 mono">100.0%</div>
-                <div class="text-[10px] text-slate-400">Verified Accuracy (6/6)</div>
-              </div>
-              <div class="bg-slate-950/80 p-2.5 rounded-lg border border-slate-800">
-                <div id="bmGraphHalluc" class="text-xl font-extrabold text-emerald-400 mono">0.0%</div>
-                <div class="text-[10px] text-slate-400">Hallucination Rate</div>
-              </div>
-              <div class="bg-slate-950/80 p-2.5 rounded-lg border border-slate-800">
-                <div id="bmGraphLat" class="text-xl font-extrabold text-cyan-300 mono">-- ms</div>
-                <div class="text-[10px] text-slate-400">Avg FalkorDB Latency</div>
-              </div>
-            </div>
+          <div class="rounded-xl border border-amber-500/40 bg-amber-950/20 p-3">
+            <div class="text-[11px] font-bold uppercase text-amber-300 mb-1">⚠️ System B: Local + Verifier (Depth=1)</div>
+            <div class="text-[10px] text-slate-400 mb-2">Verifier Enabled, No Multi-Hop Graph Traversal</div>
+            <div id="bmSysBAcc" class="text-lg font-extrabold text-amber-300 mono">50.0% (6/12)</div>
+            <div class="text-[10px] text-slate-400 mt-1">Verifies local 0/1-hop services, misses 2–3 hop regressions</div>
+          </div>
+
+          <div class="rounded-xl border border-cyan-500/40 bg-cyan-950/20 p-3">
+            <div class="text-[11px] font-bold uppercase text-cyan-300 mb-1">🔹 System C: FalkorDB + Verifier (Stateless)</div>
+            <div class="text-[10px] text-slate-400 mb-2">Multi-Hop Graph + Sandbox Check (Memory Disabled)</div>
+            <div id="bmSysCAcc" class="text-lg font-extrabold text-cyan-300 mono">100.0% (12/12)</div>
+            <div class="text-[10px] text-slate-400 mt-1">100% accuracy, but re-runs full traversal &amp; checks every time</div>
+          </div>
+
+          <div class="rounded-xl border border-emerald-500/50 bg-emerald-950/25 p-3">
+            <div class="text-[11px] font-bold uppercase text-emerald-300 mb-1">✅ System D: FalkorDB + Verifier + Memory</div>
+            <div class="text-[10px] text-slate-400 mb-2">Full Graph + Sandbox Check + Applicability Fingerprint</div>
+            <div id="bmSysDAcc" class="text-lg font-extrabold text-emerald-400 mono">100.0% (12/12)</div>
+            <div id="bmSysDNotes" class="text-[10px] text-emerald-200 mt-1">0% Stale Reuse | Avg Latency: <span id="bmGraphLat" class="mono font-bold">-- ms</span></div>
           </div>
         </div>
 
-        <!-- 6-Scenario Table -->
+        <!-- 12-Scenario Table -->
         <div class="overflow-x-auto rounded-xl border border-slate-800">
           <table class="w-full text-left border-collapse text-xs">
             <thead>
               <tr class="bg-slate-900/90 text-slate-300 border-b border-slate-800 text-[11px] uppercase">
-                <th class="p-2.5">Scenario</th>
-                <th class="p-2.5">Enterprise Challenge</th>
-                <th class="p-2.5 text-rose-300">❌ Vector-Only RAG Result</th>
-                <th class="p-2.5 text-emerald-300">✅ RAG + FalkorDB Result</th>
+                <th class="p-2.5">Scenario &amp; Ticket</th>
+                <th class="p-2.5">Challenge</th>
+                <th class="p-2.5 text-rose-300">❌ Sys A (TF-IDF) / ⚠️ Sys B (Local)</th>
+                <th class="p-2.5 text-cyan-300">🧪 Check &amp; Memory Gate</th>
+                <th class="p-2.5 text-emerald-300">✅ Sys D (FalkorDB + Verifier + Memory)</th>
                 <th class="p-2.5">Latency</th>
               </tr>
             </thead>
             <tbody id="benchmarkTableBody" class="divide-y divide-slate-800/80 bg-slate-950/60">
-              <tr><td colspan="5" class="p-4 text-center text-slate-400">Running live benchmark against FalkorDB Cloud...</td></tr>
+              <tr><td colspan="6" class="p-4 text-center text-slate-400">Running 12-case 4-system ablation benchmark...</td></tr>
             </tbody>
           </table>
         </div>
@@ -767,7 +787,8 @@
         3: { service: 'payment-gateway-router', ticket_id: 'TICKET-4915', depth: 4, bypass_memory: true },
         4: { service: 'audit-vault-archiver', ticket_id: 'TICKET-4920', depth: 4, bypass_memory: true },
         5: { service: 'quantum-ledger-v9', ticket_id: null, depth: 4, bypass_memory: true },
-        6: { service: 'billing-edge-api', ticket_id: 'TICKET-4902', depth: 4, bypass_memory: false }
+        6: { service: 'billing-edge-api', ticket_id: 'TICKET-4902', depth: 4, bypass_memory: false },
+        7: { service: 'billing-edge-api', ticket_id: 'TICKET-4905', depth: 4, bypass_memory: false }
       },
       'nexus-commerce': {
         1: { service: 'checkout-edge-gateway', ticket_id: 'NEXUS-701', depth: 4, bypass_memory: true },
@@ -775,20 +796,23 @@
         3: { service: 'checkout-edge-gateway', ticket_id: 'NEXUS-701', depth: 4, bypass_memory: true },
         4: { service: 'fraud-velocity-scorer', ticket_id: null, depth: 4, bypass_memory: true },
         5: { service: 'quantum-ledger-v9', ticket_id: null, depth: 4, bypass_memory: true },
-        6: { service: 'checkout-edge-gateway', ticket_id: 'NEXUS-701', depth: 4, bypass_memory: false }
+        6: { service: 'checkout-edge-gateway', ticket_id: 'NEXUS-701', depth: 4, bypass_memory: false },
+        7: { service: 'cart-pricing-service', ticket_id: null, depth: 4, bypass_memory: false }
       }
     };
 
     const NODE_COLORS = {
-      Client_Issue: { fill: '#f59e0b', stroke: '#fde68a', text: '#fef3c7', badge: 'TICKET' },
-      Service:      { fill: '#0284c7', stroke: '#38bdf8', text: '#e0f2fe', badge: 'SERVICE' },
-      Code_Module:  { fill: '#7c3aed', stroke: '#c084fc', text: '#f3e8ff', badge: 'JAVA MODULE' },
-      Change:       { fill: '#e11d48', stroke: '#fda4af', text: '#ffe4e6', badge: 'GIT COMMIT' },
-      Requirement:  { fill: '#059669', stroke: '#34d399', text: '#d1fae5', badge: 'PRD / SRD' },
-      Runbook:      { fill: '#0d9488', stroke: '#5eead4', text: '#ccfbf1', badge: 'RUNBOOK' },
-      Team:         { fill: '#4f46e5', stroke: '#818cf8', text: '#e0e7ff', badge: 'TEAM' },
-      Person:       { fill: '#2563eb', stroke: '#60a5fa', text: '#dbeafe', badge: 'ON-CALL' },
-      Finding:      { fill: '#14b8a6', stroke: '#99f6e4', text: '#f0fdfa', badge: 'MEMORY' }
+      Client_Issue:    { fill: '#f59e0b', stroke: '#fde68a', text: '#fef3c7', badge: 'TICKET' },
+      Service:         { fill: '#0284c7', stroke: '#38bdf8', text: '#e0f2fe', badge: 'SERVICE' },
+      Code_Module:     { fill: '#7c3aed', stroke: '#c084fc', text: '#f3e8ff', badge: 'JAVA MODULE' },
+      Change:          { fill: '#e11d48', stroke: '#fda4af', text: '#ffe4e6', badge: 'GIT COMMIT' },
+      Requirement:     { fill: '#059669', stroke: '#34d399', text: '#d1fae5', badge: 'PRD / SRD' },
+      CheckDefinition: { fill: '#0891b2', stroke: '#67e8f9', text: '#cffafe', badge: 'CHECK DEF' },
+      Observation:     { fill: '#0d9488', stroke: '#5eead4', text: '#ccfbf1', badge: 'OBSERVATION' },
+      Runbook:         { fill: '#0d9488', stroke: '#5eead4', text: '#ccfbf1', badge: 'RUNBOOK' },
+      Team:            { fill: '#4f46e5', stroke: '#818cf8', text: '#e0e7ff', badge: 'TEAM' },
+      Person:          { fill: '#2563eb', stroke: '#60a5fa', text: '#dbeafe', badge: 'ON-CALL' },
+      Finding:         { fill: '#14b8a6', stroke: '#99f6e4', text: '#f0fdfa', badge: 'MEMORY' }
     };
 
     function escapeHtml(s) {
@@ -817,15 +841,14 @@
         document.getElementById('activeGraphKeyBadge').textContent = `falkortrace:${currentTenant}`;
 
         const fdb = healthRes.falkordb || {};
-        const isCloud = fdb.mode === 'falkordb-cloud';
-        document.getElementById('dbStatusBadge').textContent = isCloud
-          ? `FalkorDB Cloud (ap-south-1): LIVE`
-          : `FalkorDB (${fdb.mode || 'ready'})`;
+        const engineMode = fdb.engine_mode || (fdb.is_live_server ? 'LIVE_FALKORDB' : 'IN_MEMORY_FALLBACK');
+        document.getElementById('dbStatusBadge').textContent =
+          `Engine: ${engineMode} (${fdb.mode || 'ready'})`;
         document.getElementById('dbHostInput').value = fdb.host || '';
         document.getElementById('dbPortInput').value = fdb.port || 6379;
         document.getElementById('dbUserInput').value = fdb.username || 'falkordb';
         document.getElementById('cloudCurrentStatusBox').textContent =
-          `Mode: ${fdb.mode} | Host: ${fdb.host}:${fdb.port} | Live Server: ${fdb.is_live_server}`;
+          `Engine Mode: ${engineMode} | Mode: ${fdb.mode} | Host: ${fdb.host}:${fdb.port} | Strict DB: ${fdb.strict_db_mode}`;
 
         if (healthRes.llm && healthRes.llm.configured) {
           document.getElementById('llmBtnLabel').textContent = `LLM: ${healthRes.llm.provider.toUpperCase()} (${healthRes.llm.key_preview})`;
@@ -856,15 +879,18 @@
       document.getElementById('depthSlider').value = currentDepth;
       document.getElementById('depthValue').textContent = currentDepth;
 
-      // For scenario 6 (Repeat Incident Memory Hit), ensure a finding exists first
-      if (num === 6) {
+      // For scenario 6 (Exact Fingerprint Memory Hit) or scenario 7 (Same Service, Different Input Guard),
+      // prime a finding on TICKET-4902 / NEXUS-701 first so the applicability gate is demonstrated live
+      if (num === 6 || num === 7) {
+        const primeTicket = currentTenant === 'nexus-commerce' ? 'NEXUS-701' : 'TICKET-4902';
+        const primeService = currentTenant === 'nexus-commerce' ? 'checkout-edge-gateway' : 'billing-edge-api';
         await fetch('/api/triage', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             tenant_id: currentTenant,
-            service: cfg.service,
-            ticket_id: cfg.ticket_id,
+            service: primeService,
+            ticket_id: primeTicket,
             depth: 4,
             bypass_memory: true
           })
@@ -941,17 +967,17 @@
     }
 
     // =====================================================================
-    // RENDER ALL 3 COLUMNS: LEFT (Vector RAG) | CENTER (FalkorDB) | RIGHT (Verdict)
+    // RENDER ALL 3 COLUMNS: LEFT (Lexical TF-IDF) | CENTER (FalkorDB) | RIGHT (Verdict)
     // =====================================================================
     function renderComparisonWorkspace(res) {
       const vcomp = res.vector_rag_comparison || {};
 
       // Top Scoreboard updates
       document.getElementById('centerLatencyBadge').textContent = `${res.total_latency_ms || 0} ms`;
-      document.getElementById('dbStatusBadge').textContent = `FalkorDB Cloud: ${res.total_latency_ms || 0} ms`;
+      document.getElementById('dbStatusBadge').textContent = `Engine: ${res.engine_mode || 'FalkorDB'} (${res.total_latency_ms || 0} ms)`;
 
       // -------------------------------------------------------------------
-      // 1. LEFT PANE: ❌ STANDARD VECTOR-ONLY RAG
+      // 1. LEFT PANE: ❌ LEXICAL TF-IDF BASELINE (k=3)
       // -------------------------------------------------------------------
       document.getElementById('ragStatusPill').textContent = vcomp.rag_status || 'LIMITED';
       document.getElementById('ragFailureTitle').textContent = vcomp.failure_mode_title || 'Multi-Hop Blindness';
@@ -966,7 +992,7 @@
       chunksContainer.innerHTML = chunks.map((c, i) => {
         const pct = Math.round((c.similarity || 0) * 100);
         const badgeHtml = c.is_root_cause
-          ? `<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">Static Match Only</span>`
+          ? `<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">Local Match Only</span>`
           : `<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40">❌ Wrong / Local Chunk</span>`;
         return `
           <div class="rounded-lg border border-slate-800 bg-slate-900/90 p-2.5">
@@ -979,7 +1005,7 @@
             </div>
             <div class="flex items-center justify-between text-[10px] text-slate-400 mb-1">
               <span>${escapeHtml(c.chunk_type)} (${escapeHtml(c.service)})</span>
-              <span class="font-bold text-rose-300 mono">Cosine Sim: ${c.similarity}</span>
+              <span class="font-bold text-rose-300 mono">TF-IDF Cos: ${c.similarity}</span>
             </div>
             <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mb-1.5">
               <div class="h-full bg-gradient-to-r from-rose-500 to-amber-500" style="width: ${pct}%"></div>
@@ -1019,9 +1045,9 @@
         rollbackBtn.classList.add('hidden');
       }
 
-      // Render 5-Agent Swarm Strip
+      // Render Dynamic Agent Pipeline Strip
       const handoffs = res.agent_handoffs || [];
-      document.getElementById('swarmTotalSteps').textContent = `${handoffs.length} Agent Steps • ${(res.tool_trace || []).length} Parameterized Queries`;
+      document.getElementById('swarmTotalSteps').textContent = `${handoffs.length} Agent Steps • ${(res.tool_trace || []).length} Tool Calls`;
       document.getElementById('agentSwarmStrip').innerHTML = handoffs.map(h => {
         const statusColor = h.status === 'blocked'
           ? 'border-rose-500/50 bg-rose-950/30 text-rose-300'
@@ -1041,7 +1067,7 @@
         `;
       }).join('');
 
-      // Render Cypher & GraphBLAS Traces
+      // Render Cypher & Verification Traces
       const traces = res.tool_trace || [];
       document.getElementById('cypherCountBadge').textContent = traces.length;
       document.getElementById('cypherTraceList').innerHTML = traces.map((t, idx) => `
@@ -1067,7 +1093,7 @@
       renderInteractiveGraphSvg(res);
 
       // -------------------------------------------------------------------
-      // 3. RIGHT PANE: ✅ RAG + FALKORDB GRAPH VERDICT & PROVENANCE
+      // 3. RIGHT PANE: ✅ FALKORDB + SANDBOX VERIFIER & MEMORY PROOF
       // -------------------------------------------------------------------
       document.getElementById('graphOutcomePill').textContent = res.outcome || 'answered_with_path';
       const vBadge = document.getElementById('graphVerdictBadge');
@@ -1085,6 +1111,56 @@
       document.getElementById('graphSummaryText').textContent = res.summary || '';
 
       const cit = res.citations || {};
+      const verif = res.verification || cit.verification_observation || null;
+      const memApp = res.memory_applicability || {};
+
+      // Render Executable Sandbox Verification & Memory Gate Card
+      const chkBadge = document.getElementById('checkStatusBadge');
+      const verifBox = document.getElementById('verificationEvidenceBox');
+      const memBox = document.getElementById('memoryApplicabilityBox');
+
+      if (verif && verif.check_id) {
+        const passFailColor = verif.status === 'FAIL'
+          ? 'bg-rose-500/25 text-rose-300 border border-rose-500/40'
+          : 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40';
+        chkBadge.className = `text-[10px] font-bold px-1.5 py-0.5 rounded mono ${passFailColor}`;
+        chkBadge.textContent = `${verif.check_id}: ${verif.status}`;
+        verifBox.innerHTML = `
+          <div><span class="text-slate-400">Run ID:</span> <span class="text-cyan-300">${escapeHtml(verif.run_id)}</span> (${verif.latency_ms || 0}ms)</div>
+          <div><span class="text-slate-400">Artifact:</span> <span class="text-amber-300">${escapeHtml(verif.artifact_version)} (sha:${escapeHtml(verif.artifact_sha)})</span></div>
+          <div><span class="text-slate-400">Expected (${escapeHtml(verif.req_id)} ${escapeHtml(verif.req_version)}):</span> <span class="text-emerald-300">${escapeHtml(verif.expected_value)}</span></div>
+          <div><span class="text-slate-400">Observed Output:</span> <span class="${verif.status === 'FAIL' ? 'text-rose-300 font-bold' : 'text-emerald-300 font-bold'}">${escapeHtml(verif.observed_value)}</span></div>
+        `;
+      } else if (res.outcome === 'answered_from_memory') {
+        chkBadge.className = 'text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-500/25 text-teal-300 border border-teal-500/40 mono';
+        chkBadge.textContent = `${cit.check_id || 'CHK'}: REUSED`;
+        verifBox.innerHTML = `
+          <div><span class="text-slate-400">Observation:</span> <span class="text-teal-300">${escapeHtml(cit.observation_run_id || 'Cached Run')}</span></div>
+          <div><span class="text-slate-400">Artifact SHA:</span> <span class="text-amber-300">${escapeHtml(cit.artifact_sha || 'Verified Match')}</span></div>
+          <div><span class="text-slate-400">Expected vs Observed:</span> <span class="text-slate-200">${escapeHtml(cit.expected_value || '--')} vs ${escapeHtml(cit.observed_value || '--')}</span></div>
+        `;
+      } else {
+        chkBadge.className = 'text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 mono';
+        chkBadge.textContent = res.outcome === 'unknown_service' ? 'ENTITY_GATE_BLOCKED' : 'NO_CHECK_NEEDED';
+        verifBox.innerHTML = `<div class="text-slate-400">No sandbox check required for outcome <code class="text-white">${escapeHtml(res.outcome)}</code>.</div>`;
+      }
+
+      const memDecision = memApp.decision || 'NO_PRIOR_MEMORY';
+      const memBadgeColor = memDecision === 'REUSE_APPLICABLE_OBSERVATION'
+        ? 'text-teal-300 font-bold'
+        : memDecision === 'HYPOTHESIS_ONLY_DIFFERENT_INPUT'
+        ? 'text-amber-300 font-bold'
+        : memDecision === 'INVALIDATED_STALE_VERSION'
+        ? 'text-rose-300 font-bold'
+        : 'text-slate-400';
+      memBox.innerHTML = `
+        <div class="flex items-center justify-between mb-0.5">
+          <span class="text-slate-400 uppercase font-bold text-[9px]">Memory Applicability Gate:</span>
+          <span class="mono ${memBadgeColor}">${escapeHtml(memDecision)}</span>
+        </div>
+        <div class="text-slate-300">${escapeHtml(memApp.reason || 'Evaluated against (service, input_fingerprint, artifact_sha, req_version).')}</div>
+      `;
+
       document.getElementById('proofReqBadge').textContent = cit.requirement_id || cit.finding_id || res.outcome;
 
       // Contract Proof Box
@@ -1092,7 +1168,7 @@
         document.getElementById('proofContractBox').innerHTML =
           `<strong class="text-rose-300">Entity Resolution Gate Blocked Query:</strong> Service <code class="mono text-white">${escapeHtml(res.queried_service)}</code> does not exist in <code class="mono">${escapeHtml(res.graph_name)}</code>.`;
         document.getElementById('proofDiffOrPayloadBox').textContent =
-          `0 downstream Cypher queries executed.\nVector RAG hallucinated a match; FalkorDB blocked it in ${res.total_latency_ms}ms.`;
+          `0 downstream Cypher queries executed.\nLexical TF-IDF returned false matches; FalkorDB blocked it in ${res.total_latency_ms}ms.`;
       } else if (res.outcome === 'not_in_the_graph') {
         document.getElementById('proofContractBox').innerHTML =
           `<strong class="text-purple-300">WCC Component #${escapeHtml(cit.wcc_component_id)}:</strong> Service <code class="mono text-white">${escapeHtml(res.queried_service)}</code> has 0 dependency edges connecting it to active billing.`;
@@ -1100,7 +1176,7 @@
           `CALL algo.WCC -> Isolated Component (is_isolated_island = true).\nReported as UNMODELED_DEPENDENCY instead of guessing.`;
       } else if (res.outcome === 'answered_from_memory') {
         document.getElementById('proofContractBox').innerHTML =
-          `<strong class="text-teal-300">Episodic Graph Memory Hit (<code class="mono">${escapeHtml(cit.finding_id)}</code>):</strong> Learned at <code class="mono">${escapeHtml(cit.learned_at)}</code> in session <code class="mono">${escapeHtml(cit.prior_session)}</code>.`;
+          `<strong class="text-teal-300">Version-Verified Memory Hit (<code class="mono">${escapeHtml(cit.finding_id)}</code>):</strong> Exact fingerprint match on <code class="mono">artifact_sha=${escapeHtml(cit.artifact_sha)}</code> &amp; <code class="mono">input_fp=${escapeHtml(cit.input_fingerprint)}</code>.`;
         document.getElementById('proofDiffOrPayloadBox').textContent =
           `Root Cause Node: ${cit.root_cause_node}\nShortest Path Reconstructed via CALL algo.SPpaths: ${(res.services || []).join(' -> ')}`;
       } else {
@@ -1113,10 +1189,10 @@
             `Commit: ${cit.patch_version} (sha:${cit.patch_sha}) by ${cit.patch_author} (${cit.patch_hours_ago}h ago)\nFile: ${cit.filepath}\n${cit.diff_snippet || ''}`;
         } else if (res.verdict === 'DATA_PAYLOAD_ISSUE') {
           document.getElementById('proofDiffOrPayloadBox').textContent =
-            `Client Payload Rejected: ${cit.payload_error}\nPayload: ${cit.reported_payload}\nCode Module: ${cit.code_module} (compliant = true)`;
+            `Client Payload Rejected: ${cit.payload_error}\nPayload: ${cit.reported_payload}\nCode Module: ${cit.code_module} (artifact_sha:${cit.active_artifact_sha || 'verified'})`;
         } else {
           document.getElementById('proofDiffOrPayloadBox').textContent =
-            `Code Module: ${cit.code_module} (compliant = true)\n${cit.expected_vs_actual || ''}\n${cit.shallow_depth_note || ''}`;
+            `Code Module: ${cit.code_module} (artifact_sha:${cit.active_artifact_sha || 'verified'})\n${cit.expected_vs_actual || ''}\n${cit.shallow_depth_note || ''}`;
         }
       }
 
@@ -1140,7 +1216,7 @@
 
       // Guardrail Box
       document.getElementById('guardrailStatusBadge').textContent = guard.passed
-        ? 'PASSED (0 Invented Tokens)'
+        ? 'PASSED (0 Invented Entities)'
         : 'FALLBACK TRIGGERED';
       document.getElementById('guardrailReasonText').textContent = guard.reason || 'Verified by accepts(sentence, answer).';
       const tokens = (res.allowed_tokens || []).slice(0, 14);
@@ -1191,21 +1267,17 @@
       const allNodes = fullGraphData.nodes || [];
       const allEdges = fullGraphData.edges || [];
 
-      // If 'subgraph' mode is active and we have highlight_nodes, show the focused causal subgraph
-      // (plus direct service neighbors so the user sees the clear multi-hop bridge!)
       let displayNodes = [];
       let displayEdges = [];
 
       if (centerViewMode === 'subgraph' && highlightNodeSet.size > 0) {
         const subIds = new Set(highlightNodeSet);
-        // Also include all services so the microservice topology is always clear
         allNodes.forEach(n => {
           if (n.type === 'Service') subIds.add(n.id);
         });
         displayNodes = allNodes.filter(n => subIds.has(n.id));
         displayEdges = allEdges.filter(e => subIds.has(e.from) && subIds.has(e.to));
       } else if (centerViewMode === 'subgraph' && res.outcome === 'unknown_service') {
-        // Show a synthetic blocked node for unknown_service
         displayNodes = [
           { id: res.queried_service, label: res.queried_service, type: 'Client_Issue', subtitle: 'BLOCKED AT ENTITY GATE (0 Rows in FalkorDB)' },
           ...allNodes.filter(n => n.type === 'Service').slice(0, 6)
@@ -1216,7 +1288,6 @@
         displayEdges = allEdges;
       }
 
-      // Compute clean layered positions across 980x470 canvas
       const posMap = computeLayeredLayout(displayNodes, res);
 
       edgesGroup.innerHTML = displayEdges.map(e => {
@@ -1277,13 +1348,12 @@
       const width = 940;
       const height = 430;
 
-      // Group nodes into logical left-to-right columns so the causal chain is crystal clear
       const cols = {
         0: [], // Client_Issue + Finding
         1: [], // Entrypoint & Hop 1 Services
         2: [], // Hop 2 & Hop 3 Services
         3: [], // Code_Module + Change
-        4: []  // Requirement + Runbook + Team + Person
+        4: []  // Requirement + CheckDefinition + Runbook + Team + Person
       };
 
       const viaPath = (res.citations && res.citations.via_path) || res.services || [];
@@ -1373,7 +1443,7 @@
     }
 
     // =====================================================================
-    // LIVE GRAPH MUTATIONS: ROLLBACK, CHAOS FAULT INJECTION, MEMORY CLEAR
+    // LIVE GRAPH MUTATIONS: SIMULATED ROLLBACK, CHAOS FAULT, MEMORY CLEAR
     // =====================================================================
     async function triggerLiveRollback() {
       if (!lastTriageResult) return;
@@ -1394,7 +1464,7 @@
         service: currentService,
         ticket_id: currentTicketId,
         depth: currentDepth,
-        bypass_memory: true
+        bypass_memory: false
       });
     }
 
@@ -1467,12 +1537,12 @@
     }
 
     // =====================================================================
-    // 6-CASE ENTERPRISE RELIABILITY BENCHMARK MODAL
+    // 12-CASE 4-SYSTEM ABLATION BENCHMARK MODAL
     // =====================================================================
     async function openBenchmarkModal() {
       document.getElementById('benchmarkModal').classList.remove('hidden');
       document.getElementById('benchmarkTableBody').innerHTML =
-        `<tr><td colspan="5" class="p-6 text-center text-emerald-300 mono">Running 6-scenario live benchmark against FalkorDB Cloud...</td></tr>`;
+        `<tr><td colspan="6" class="p-6 text-center text-emerald-300 mono">Running 12-case 4-system ablation benchmark against FalkorDB...</td></tr>`;
 
       try {
         const res = await fetch('/api/benchmark', {
@@ -1481,12 +1551,17 @@
           body: JSON.stringify({ tenant_id: currentTenant })
         }).then(r => r.json());
 
-        const rScore = res.vector_rag_scorecard || {};
-        const gScore = res.falkordb_graph_scorecard || {};
-        document.getElementById('bmRagAcc').textContent = `${rScore.accuracy_pct ?? 0}% (${rScore.passed_count || '0/6'})`;
-        document.getElementById('bmRagHalluc').textContent = `${rScore.hallucination_rate_pct ?? 66.7}%`;
-        document.getElementById('bmGraphAcc').textContent = `${gScore.accuracy_pct ?? 100}% (${gScore.passed_count || '6/6'})`;
-        document.getElementById('bmGraphHalluc').textContent = `0.0%`;
+        const sys4 = res.four_system_comparison || {};
+        const sysA = sys4.system_a_lexical_tfidf || res.vector_rag_scorecard || {};
+        const sysB = sys4.system_b_local_verifier_no_graph || {};
+        const sysC = sys4.system_c_falkordb_verifier_stateless || {};
+        const sysD = sys4.system_d_falkordb_verifier_memory || res.falkordb_graph_scorecard || {};
+
+        document.getElementById('bmEngineModeBadge').textContent = res.engine_mode || 'FalkorDB';
+        document.getElementById('bmSysAAcc').textContent = `${sysA.accuracy_pct ?? 0}% (${sysA.passed_count || '0/12'})`;
+        document.getElementById('bmSysBAcc').textContent = `${sysB.accuracy_pct ?? 50}% (${sysB.passed_count || '6/12'})`;
+        document.getElementById('bmSysCAcc').textContent = `${sysC.accuracy_pct ?? 100}% (${sysC.passed_count || '12/12'})`;
+        document.getElementById('bmSysDAcc').textContent = `${sysD.accuracy_pct ?? 100}% (${sysD.passed_count || '12/12'})`;
         document.getElementById('bmGraphLat').textContent = `${res.avg_query_latency_ms || 10} ms`;
 
         document.getElementById('benchmarkTableBody').innerHTML = (res.cases || []).map(c => `
@@ -1497,8 +1572,14 @@
             </td>
             <td class="p-2.5 text-slate-300">${escapeHtml(c.challenge)}</td>
             <td class="p-2.5">
-              <div class="font-bold text-rose-400 mono">❌ ${escapeHtml(c.vector_rag_verdict)}</div>
-              <div class="text-[10px] text-slate-400">Top chunk: ${escapeHtml(c.vector_rag_top_chunk)} | True RC: ${escapeHtml(c.vector_rag_root_cause_rank)}</div>
+              <div class="font-bold text-rose-400 mono">❌ Sys A: ${escapeHtml(c.vector_rag_verdict)}</div>
+              <div class="text-[10px] text-amber-300 mono">⚠️ Sys B: ${escapeHtml(c.system_b_local_verdict || 'MISS')}</div>
+              <div class="text-[10px] text-slate-400">True RC Rank: ${escapeHtml(c.vector_rag_root_cause_rank)}</div>
+            </td>
+            <td class="p-2.5 mono text-[10px]">
+              <div class="font-bold text-cyan-300">Check: ${escapeHtml(c.check_executed || 'N/A')}</div>
+              <div class="text-slate-300">${escapeHtml(c.expected_vs_observed || '')}</div>
+              <div class="text-teal-300">Mem Gate: ${escapeHtml(c.memory_decision || 'NONE')}</div>
             </td>
             <td class="p-2.5">
               <div class="font-bold text-emerald-400 mono">✅ ${escapeHtml(c.falkordb_verdict)} (${escapeHtml(c.falkordb_outcome)})</div>

@@ -1,7 +1,7 @@
 """
 Model Context Protocol (MCP) Server for FalkorTrace (`backend/mcp_server.py`).
 
-Exposes FalkorTrace's fixed parameterized Cypher & native Graph Algorithm tools over:
+Exposes FalkorTrace's fixed parameterized Cypher, Sandboxed Check Execution & native Graph Algorithm tools over:
 1. JSON-RPC 2.0 `stdio` transport (`python -m backend.mcp_server`) for Claude Desktop, Cursor, or Antigravity.
 2. Direct Python functions (`list_mcp_tools`, `call_mcp_tool`) mounted on FastAPI (`/api/mcp/tools`, `/api/mcp/call`).
 """
@@ -12,19 +12,24 @@ import json
 import sys
 from typing import Any, Dict, List
 
-from backend.db import ensure_tenant_seeded, get_db
+from backend.db import ensure_tenant_seeded, get_db, get_live_dataset_snapshot
+from backend.seed import validate_tenant_scope
 from backend.tools import (
     MCP_TOOLS_CATALOGUE,
     analyze_topology_islands_and_bridges,
+    evaluate_memory_applicability,
     inspect_recent_patches,
     inspect_ticket_and_prd_lineage,
+    list_relevant_checks,
     recall_past_findings,
     record_finding,
     resolve_service,
+    run_approved_check,
     service_criticality_pagerank,
     shortest_dependency_path,
     trace_blast_radius,
 )
+from backend.verifier import compute_input_fingerprint
 
 
 def list_mcp_tools() -> List[Dict[str, Any]]:
@@ -37,18 +42,20 @@ def call_mcp_tool(
 ) -> Dict[str, Any]:
     """
     Execute a single MCP tool against `db.select_graph(f"falkortrace:{tenant_id}")`.
-    Enforces the Entity Resolution Gate (`resolve_service`) before any service-scoped tool runs.
+    Enforces authorized tenant scope and the Entity Resolution Gate (`resolve_service`)
+    before any service-scoped tool runs.
     """
+    tid = validate_tenant_scope(tenant_id)
     db = get_db()
-    ensure_tenant_seeded(db, tenant_id)
-    graph = db.select_graph(f"falkortrace:{tenant_id}")
+    ensure_tenant_seeded(db, tid)
+    graph = db.select_graph(f"falkortrace:{tid}")
 
     if tool_name == "resolve_service":
         data, trace = resolve_service(graph, str(arguments.get("service", "")))
         return {"result": data, "trace": trace}
 
     # Enforce entity resolution gate on service-scoped tools
-    if "service" in arguments and tool_name != "record_finding":
+    if "service" in arguments and arguments["service"] and tool_name not in ("record_finding", "list_relevant_checks"):
         svc_name = str(arguments["service"])
         resolved, gate_trace = resolve_service(graph, svc_name)
         if resolved is None:
@@ -65,6 +72,23 @@ def call_mcp_tool(
             limit=int(arguments.get("limit", 5)),
         )
         return {"result": data, "trace": trace}
+
+    if tool_name == "get_applicable_observations":
+        svc = str(arguments["service"])
+        ticket_id = arguments.get("ticket_id")
+        past, trace = recall_past_findings(graph, service=svc, limit=10)
+        ds = get_live_dataset_snapshot(graph, tid)
+        active_map = {m["service"]: m.get("active_artifact_sha", "") for m in ds.get("code_modules", [])}
+        in_fp = arguments.get("input_fingerprint") or compute_input_fingerprint(tid, svc, ticket_id)
+        eval_res = evaluate_memory_applicability(
+            past_findings=past,
+            tenant_id=tid,
+            service=svc,
+            ticket_id=ticket_id,
+            input_fingerprint=in_fp,
+            active_artifact_map=active_map,
+        )
+        return {"result": eval_res, "trace": trace}
 
     if tool_name == "inspect_ticket_and_prd_lineage":
         data, trace = inspect_ticket_and_prd_lineage(
@@ -86,6 +110,24 @@ def call_mcp_tool(
             service=str(arguments["service"]),
             depth=int(arguments.get("depth", 3)),
             hours=int(arguments.get("hours", 72)),
+        )
+        return {"result": data, "trace": trace}
+
+    if tool_name == "list_relevant_checks":
+        data, trace = list_relevant_checks(
+            graph,
+            service=arguments.get("service"),
+            module=arguments.get("module"),
+        )
+        return {"result": data, "trace": trace}
+
+    if tool_name == "run_approved_check":
+        data, trace = run_approved_check(
+            graph,
+            check_id=str(arguments["check_id"]),
+            case_id=str(arguments.get("case_id", "MCP-CASE")),
+            artifact_sha=str(arguments["artifact_sha"]),
+            raw_payload=arguments.get("raw_payload"),
         )
         return {"result": data, "trace": trace}
 
@@ -118,6 +160,12 @@ def call_mcp_tool(
             session=str(arguments.get("session", "MCP-SESSION")),
             root_cause_node=str(arguments.get("root_cause_node", "")),
             ticket_id=str(arguments.get("ticket_id", "")),
+            input_fingerprint=str(arguments.get("input_fingerprint", "UNKNOWN")),
+            artifact_sha=str(arguments.get("artifact_sha", "UNKNOWN")),
+            req_version=str(arguments.get("req_version", "UNKNOWN")),
+            check_version=str(arguments.get("check_version", "UNKNOWN")),
+            observation_id=str(arguments.get("observation_id", "")),
+            run_id=str(arguments.get("run_id", "")),
         )
         return {"result": data, "trace": trace}
 
@@ -142,7 +190,7 @@ def run_stdio_mcp_server() -> None:
                     "id": req_id,
                     "result": {
                         "protocolVersion": "2024-11-05",
-                        "serverInfo": {"name": "falkortrace-mcp", "version": "1.0.0"},
+                        "serverInfo": {"name": "falkortrace-mcp", "version": "2.0.0"},
                         "capabilities": {"tools": {}},
                     },
                 }

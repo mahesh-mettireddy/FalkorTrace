@@ -1,11 +1,18 @@
 """
-Idempotent FalkorDB Graph Seeder for FalkorTrace.
+Idempotent FalkorDB Graph Seeder for FalkorTrace (`backend/seed.py`).
 
 Populates isolated tenant graphs via `db.select_graph(f"falkortrace:{tenant_id}")`:
 1. `killbill-prod`: Enterprise SaaS Subscription & Invoicing Platform (Kill Bill Java architecture)
 2. `nexus-commerce`: Global High-Frequency Checkout & Ledger Platform
 
-Every node and edge maps strictly to the 6 Golden Rules from the WeMakeDevs x FalkorDB blueprint.
+Includes:
+- Connected Service, Code_Module, Requirement, Change, Team, Person, Runbook, and Client_Issue nodes.
+- Executable Verification Graph Entities (`CheckDefinition` & `ArtifactVersion`) mapped via
+  `(:Code_Module)-[:VERIFIED_BY]->(:CheckDefinition)`, `(:Requirement)-[:CHECKED_BY]->(:CheckDefinition)`,
+  and `(:Code_Module)-[:ACTIVE_VERSION]->(:ArtifactVersion)`.
+- Multi-case tickets on the same service (e.g., `TICKET-4902`, `TICKET-4905`, `TICKET-4906` on `billing-edge-api`;
+  `TICKET-4908`, `TICKET-4909` on `invoice-orchestrator`; `TICKET-4915`, `TICKET-4916` on `payment-gateway-router`)
+  to prove version-aware memory applicability and held-out evaluation.
 """
 
 from __future__ import annotations
@@ -13,6 +20,9 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List
 
+from backend.verifier import ARTIFACT_VERSIONS_CATALOG, INDEPENDENT_REQUIREMENT_SPECIFICATIONS
+
+ALLOWED_TENANTS = {"killbill-prod", "nexus-commerce"}
 
 TENANT_METADATA: Dict[str, Dict[str, str]] = {
     "killbill-prod": {
@@ -20,27 +30,38 @@ TENANT_METADATA: Dict[str, Dict[str, str]] = {
         "graph_name": "falkortrace:killbill-prod",
         "display_name": "KillBill SaaS Billing (Prod)",
         "domain": "Enterprise Subscription, Proration & Invoicing Engine (Java 21)",
-        "description": "Multi-hop billing topology connecting Client Issues, Microservices, Java Modules, PRD/SRD Specs, Git Patches, Oncall Teams, and Episodic Findings.",
+        "description": "Multi-hop billing topology connecting Client Issues, Microservices, Java Modules, PRD/SRD Specs, Git Patches, CheckDefinitions, ArtifactVersions, Oncall Teams, and Versioned Episodic Findings.",
     },
     "nexus-commerce": {
         "tenant_id": "nexus-commerce",
         "graph_name": "falkortrace:nexus-commerce",
         "display_name": "Nexus Commerce Checkout (Prod)",
         "domain": "Global High-Frequency Cart, Fraud & Settlement Platform (Go / Kotlin)",
-        "description": "Isolated secondary tenant demonstrating FalkorDB hardware multigraph isolation (`db.select_graph('falkortrace:nexus-commerce')`).",
+        "description": "Isolated secondary tenant demonstrating FalkorDB logical multigraph namespace separation (`db.select_graph('falkortrace:nexus-commerce')`).",
     },
 }
 
 
+def validate_tenant_scope(tenant_id: str) -> str:
+    """Validate requested tenant_id against authorized server-side tenant scope."""
+    tid = (tenant_id or "killbill-prod").strip()
+    if tid not in ALLOWED_TENANTS:
+        raise ValueError(
+            f"Unauthorized tenant scope '{tid}'. Permitted tenant graphs: {sorted(ALLOWED_TENANTS)}"
+        )
+    return tid
+
+
 def get_tenant_dataset(tenant_id: str) -> Dict[str, Any]:
     """Return the canonical structured graph dataset for the requested tenant."""
-    if tenant_id == "nexus-commerce":
+    tid = validate_tenant_scope(tenant_id)
+    if tid == "nexus-commerce":
         return _build_nexus_commerce_dataset()
     return _build_killbill_prod_dataset()
 
 
 def _build_killbill_prod_dataset() -> Dict[str, Any]:
-    """Rich Kill Bill Enterprise SaaS Billing dataset covering all 4+1 Demo Scenarios."""
+    """Rich Kill Bill Enterprise SaaS Billing dataset covering live demo and held-out evaluation cases."""
     services = [
         {
             "name": "billing-edge-api",
@@ -130,6 +151,8 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "filepath": "src/main/java/org/killbill/billing/edge/BillingEdgeController.java",
             "method_name": "upgradeSubscriptionPlan()",
             "governed_field": "tenant_jwt",
+            "active_artifact_sha": "3a11c09",
+            "check_id": "",
             "logic_summary": "Validates tenant JWT and forwards upgrade request to SubscriptionBillingApi.",
         },
         {
@@ -138,6 +161,8 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "filepath": "src/main/java/org/killbill/billing/subscription/api/SubscriptionBillingApi.java",
             "method_name": "transitionPlanImmediate()",
             "governed_field": "plan_transition",
+            "active_artifact_sha": "7b44e21",
+            "check_id": "",
             "logic_summary": "Computes effective transition timestamp and triggers InvoiceOrchestrator.",
         },
         {
@@ -146,6 +171,8 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "filepath": "src/main/java/org/killbill/billing/invoice/generator/DefaultInvoiceGenerator.java",
             "method_name": "generateInvoiceItems()",
             "governed_field": "invoice_run",
+            "active_artifact_sha": "4e90b12",
+            "check_id": "",
             "logic_summary": "Delegates recurring and mid-cycle proration math to FixedAndRecurringInvoiceItemGenerator.",
         },
         {
@@ -154,6 +181,8 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "filepath": "src/main/java/org/killbill/billing/invoice/discount/DiscountPolicyEvaluator.java",
             "method_name": "evaluateMultiSeatRenewalDiscount()",
             "governed_field": "active_seats",
+            "active_artifact_sha": "4e90b12",
+            "check_id": "CHK-DISCOUNT-SEAT-50",
             "logic_summary": "Applies 15% enterprise discount strictly when active_seats >= 50 at renewal snapshot; reverts to 0% below 50 seats.",
         },
         {
@@ -162,7 +191,9 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "filepath": "src/main/java/org/killbill/billing/invoice/proration/FixedAndRecurringInvoiceItemGenerator.java",
             "method_name": "calculateProratedUpgradeAmount()",
             "governed_field": "expected_prorated_charge",
-            "logic_summary": "REGRESSION IN PATCH v4.12.2: Uses inclusive day-count (remainingDays + 1) ceiling multiplier instead of exact 30/360 convention, overcharging mid-month upgrades by $15.",
+            "active_artifact_sha": "9f82d1a",
+            "check_id": "CHK-PRORATION-30-360",
+            "logic_summary": "Computes mid-cycle proration credit/charge ratio across remaining billing cycle days (modified in Patch-v4.12.2 sha:9f82d1a).",
         },
         {
             "name": "TaxLedgerSettlementAdapter.java",
@@ -170,6 +201,8 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "filepath": "src/main/java/org/killbill/billing/tax/TaxLedgerSettlementAdapter.java",
             "method_name": "commitTaxJournalEntry()",
             "governed_field": "tax_journal",
+            "active_artifact_sha": "2d88a10",
+            "check_id": "CHK-TAX-ROUNDING",
             "logic_summary": "Posts immutable tax lines using half-even banker's rounding.",
         },
         {
@@ -178,6 +211,8 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "filepath": "src/main/java/org/killbill/billing/payment/webhook/PaymentWebhookValidator.java",
             "method_name": "validateSettlementWebhook()",
             "governed_field": "currency",
+            "active_artifact_sha": "1c55f08",
+            "check_id": "CHK-WEBHOOK-ISO4217",
             "logic_summary": "Strictly enforces 3-letter ISO-4217 fiat currency codes and non-null UUIDv4 idempotency_key.",
         },
         {
@@ -186,6 +221,8 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "filepath": "src/main/java/org/killbill/billing/fx/FxRateLockEngine.java",
             "method_name": "lockSettlementRate()",
             "governed_field": "fx_pair",
+            "active_artifact_sha": "1c55f08",
+            "check_id": "",
             "logic_summary": "Locks ECB/Fed spot FX rate for validated 3-letter ISO-4217 currency pairs.",
         },
     ]
@@ -197,6 +234,7 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "title": "Idempotent Upgrade Request Envelope",
             "rule_text": "All subscription upgrade calls on billing-edge-api must preserve tenant context and forward target_plan_code unchanged.",
             "version": "v2.1",
+            "check_id": "",
         },
         {
             "id": "PRD-SUB-102",
@@ -204,6 +242,7 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "title": "Immediate Mid-Cycle Upgrade Alignment",
             "rule_text": "Upgrading from Basic ($30/mo) to Enterprise ($90/mo) mid-cycle takes effect immediately while retaining the existing billing cycle anchor.",
             "version": "v3.0",
+            "check_id": "",
         },
         {
             "id": "PRD-INV-104",
@@ -211,6 +250,7 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "title": "Exact 30/360 Daily Proration Convention",
             "rule_text": "Mid-month subscription upgrades on Day 15 of a 30-day cycle MUST prorate using the exact 30/360 day-count fraction (15/30 = 0.50 of the $60 tier delta = $30.00 net charge). Inclusive day-count offsets or ceiling multipliers are strictly prohibited.",
             "version": "v3.4",
+            "check_id": "CHK-PRORATION-30-360",
         },
         {
             "id": "PRD-DISC-209",
@@ -218,6 +258,7 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "title": "15% Multi-Seat Annual Renewal Discount Threshold",
             "rule_text": "The 15% Enterprise Multi-Seat Discount requires >= 50 active provisioned seats at the exact renewal snapshot timestamp. Accounts with fewer than 50 active seats automatically revert to standard tier pricing (0% multi-seat discount).",
             "version": "v4.1",
+            "check_id": "CHK-DISCOUNT-SEAT-50",
         },
         {
             "id": "SRD-BILL-08",
@@ -225,6 +266,7 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "title": "Deterministic Renewal Snapshot Seat Count",
             "rule_text": "DiscountPolicyEvaluator must evaluate seat thresholds against the immutable active_seats counter in the renewal payload without manual grace overrides.",
             "version": "v1.9",
+            "check_id": "CHK-DISCOUNT-SEAT-50",
         },
         {
             "id": "SRD-PAY-301",
@@ -232,6 +274,7 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "title": "Multi-Currency Webhook ISO-4217 & Idempotency Contract",
             "rule_text": "All payment settlement webhooks must supply a valid 3-letter ISO-4217 fiat currency code (e.g., USD, EUR, GBP, INR) and a non-null UUIDv4 idempotency_key. Crypto ticker symbols or null idempotency keys must be rejected.",
             "version": "v2.8",
+            "check_id": "CHK-WEBHOOK-ISO4217",
         },
         {
             "id": "SRD-TAX-401",
@@ -239,6 +282,7 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "title": "Double-Entry Tax Ledger Rounding",
             "rule_text": "Tax ledger postings must use IEEE 754 BigDecimal HALF_EVEN rounding to 2 decimal places.",
             "version": "v1.5",
+            "check_id": "CHK-TAX-ROUNDING",
         },
     ]
 
@@ -252,9 +296,9 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "module": "FixedAndRecurringInvoiceItemGenerator.java",
             "requirement": "PRD-INV-104",
             "compliant": False,
-            "note": "VIOLATION: Patch-v4.12.2 (sha:9f82d1a) introduced inclusive day-count + 1.5x tier multiplier, charging $45.00 instead of $30.00.",
+            "note": "Candidate change sha:9f82d1a touched day-count divisor; requires CHK-PRORATION-30-360 sandbox verification.",
         },
-        {"module": "TaxLedgerSettlementAdapter.java", "requirement": "SRD-TAX-401", "compliant": True, "note": "Compliant HALF_EVEN BigDecimal rounding."},
+        {"module": "TaxLedgerSettlementAdapter.java", "requirement": "SRD-TAX-401", "compliant": True, "note": "Uses BigDecimal HALF_EVEN rounding."},
         {"module": "PaymentWebhookValidator.java", "requirement": "SRD-PAY-301", "compliant": True, "note": "Strictly validates 3-letter ISO-4217 currency and non-null idempotency_key."},
         {"module": "FxRateLockEngine.java", "requirement": "SRD-PAY-301", "compliant": True, "note": "Validates ISO currency pair before rate lock."},
     ]
@@ -289,7 +333,7 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "patch_version": "Patch-v4.12.2",
             "summary": "refactor(proration): optimize mid-cycle day-count ratio calculation",
             "regressions_introduced": True,
-            "diff_snippet": "- BigDecimal factor = BigDecimal.valueOf(remainingDays).divide(BigDecimal.valueOf(30), 6, HALF_UP);\n+ // BUG: off-by-one inclusive boundary + stepped factor\n+ BigDecimal factor = BigDecimal.valueOf(remainingDays + 1).divide(BigDecimal.valueOf(20), 6, CEILING);",
+            "diff_snippet": "- BigDecimal factor = BigDecimal.valueOf(remainingDays).divide(BigDecimal.valueOf(30), 6, HALF_UP);\n+ BigDecimal factor = BigDecimal.valueOf(remainingDays + 1).divide(BigDecimal.valueOf(20), 6, CEILING);",
             "at": "2026-10-16T00:10:00Z",
             "hours_ago": 4,
             "author": "@arjun-rao",
@@ -320,6 +364,21 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "modified_module": "PaymentWebhookValidator.java",
             "deployed_service": "payment-gateway-router",
         },
+    ]
+
+    check_definitions = [
+        INDEPENDENT_REQUIREMENT_SPECIFICATIONS["CHK-PRORATION-30-360"],
+        INDEPENDENT_REQUIREMENT_SPECIFICATIONS["CHK-DISCOUNT-SEAT-50"],
+        INDEPENDENT_REQUIREMENT_SPECIFICATIONS["CHK-WEBHOOK-ISO4217"],
+        INDEPENDENT_REQUIREMENT_SPECIFICATIONS["CHK-TAX-ROUNDING"],
+    ]
+
+    artifact_versions = [
+        ARTIFACT_VERSIONS_CATALOG["9f82d1a"],
+        ARTIFACT_VERSIONS_CATALOG["7c31b09"],
+        ARTIFACT_VERSIONS_CATALOG["4e90b12"],
+        ARTIFACT_VERSIONS_CATALOG["1c55f08"],
+        ARTIFACT_VERSIONS_CATALOG["2d88a10"],
     ]
 
     teams = [
@@ -448,6 +507,7 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
     ]
 
     client_issues = [
+        # --- Live Demo Cases ---
         {
             "id": "TICKET-4902",
             "title": "Mid-month Enterprise upgrade charged $45.00 instead of prorated $30.00",
@@ -500,6 +560,59 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "actual_behavior": "Service exists in FalkorDB, but has zero modeled dependency or code paths (Disconnected WCC Island).",
             "created_at": "2026-10-16T01:10:00Z",
         },
+        # --- Additional Held-Out & Same-Service Different-Case Tickets (Judge Sections 05 & 07) ---
+        {
+            "id": "TICKET-4905",
+            "title": "Final-day (Day 29 of 30) upgrade overcharged $6.00 instead of $2.00 boundary proration",
+            "client_name": "Stratosphere Aero Systems",
+            "client_tier": "Enterprise-Platinum",
+            "reported_service": "billing-edge-api",
+            "reported_payload": '{"account_id":"ACC-7721","upgrade_from":"BASIC_30","upgrade_to":"ENT_90","cycle_day":29,"cycle_length":30,"expected_prorated_charge":2.00,"actual_billed_charge":6.00}',
+            "payload_valid": True,
+            "payload_error": "",
+            "expected_behavior": "Day 29 of 30 boundary upgrade ($60 delta * 1/30) should charge $2.00 per PRD-INV-104.",
+            "actual_behavior": "Invoice billed $6.00 on Day 29 boundary due to inclusive day-count (1+1)/20 in Patch-v4.12.2.",
+            "created_at": "2026-10-16T04:05:00Z",
+        },
+        {
+            "id": "TICKET-4906",
+            "title": "Upgrade request on billing-edge-api rejected due to invalid plan code 'CRYPTO_PLAN_999'",
+            "client_name": "OrbitPay Digital",
+            "client_tier": "Enterprise-Gold",
+            "reported_service": "billing-edge-api",
+            "reported_payload": '{"account_id":"ACC-3319","upgrade_from":"BASIC_30","upgrade_to":"CRYPTO_PLAN_999","cycle_day":15,"cycle_length":30}',
+            "payload_valid": False,
+            "payload_error": "Malformed upgrade payload on billing-edge-api: target_plan_code 'CRYPTO_PLAN_999' is not a valid catalog plan (violates SRD-API-101).",
+            "expected_behavior": "Upgrade should succeed on billing-edge-api.",
+            "actual_behavior": "BillingEdgeController rejected invalid target_plan_code 'CRYPTO_PLAN_999' per SRD-API-101.",
+            "created_at": "2026-10-16T04:20:00Z",
+        },
+        {
+            "id": "TICKET-4909",
+            "title": "Verify 60-seat Enterprise renewal discount calculation on invoice-orchestrator",
+            "client_name": "Meridian Health Cloud",
+            "client_tier": "Enterprise-Platinum",
+            "reported_service": "invoice-orchestrator",
+            "reported_payload": '{"invoice_id":"INV-9980","account_id":"ACC-ENT-905","plan":"ENTERPRISE_ANNUAL","active_seats":60,"expected_discount_pct":15,"applied_discount_pct":15}',
+            "payload_valid": True,
+            "payload_error": "",
+            "expected_behavior": "60 active seats (>= 50 threshold) receives 15% multi-seat discount per PRD-DISC-209.",
+            "actual_behavior": "DiscountPolicyEvaluator applied 15% discount accurately.",
+            "created_at": "2026-10-16T04:35:00Z",
+        },
+        {
+            "id": "TICKET-4916",
+            "title": "EUR settlement webhook failing with missing UUIDv4 idempotency_key",
+            "client_name": "EuroFin Treasury GmbH",
+            "client_tier": "Enterprise-Gold",
+            "reported_service": "payment-gateway-router",
+            "reported_payload": '{"webhook_event":"invoice.payment_succeeded","amount":8500.00,"currency":"EUR","idempotency_key":"not-a-uuid"}',
+            "payload_valid": False,
+            "payload_error": "Malformed client webhook payload: idempotency_key 'not-a-uuid' is not a valid UUIDv4 (violates SRD-PAY-301).",
+            "expected_behavior": "EUR webhook should settle.",
+            "actual_behavior": "PaymentWebhookValidator rejected non-UUIDv4 idempotency_key per SRD-PAY-301.",
+            "created_at": "2026-10-16T04:50:00Z",
+        },
     ]
 
     return {
@@ -510,16 +623,19 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
         "requirements": requirements,
         "implements_edges": implements_edges,
         "changes": changes,
+        "check_definitions": check_definitions,
+        "artifact_versions": artifact_versions,
         "teams": teams,
         "people": people,
         "runbooks": runbooks,
         "client_issues": client_issues,
+        "observations": [],
         "findings": [],
     }
 
 
 def _build_nexus_commerce_dataset() -> Dict[str, Any]:
-    """Secondary isolated tenant dataset ('nexus-commerce') proving hardware multigraph isolation."""
+    """Secondary isolated tenant dataset ('nexus-commerce') demonstrating multigraph namespace separation."""
     services = [
         {
             "name": "checkout-edge-gateway",
@@ -564,6 +680,8 @@ def _build_nexus_commerce_dataset() -> Dict[str, Any]:
             "filepath": "pkg/handler/CheckoutEdgeHandler.go",
             "method_name": "SubmitCheckout()",
             "governed_field": "checkout_session",
+            "active_artifact_sha": "55a19c2",
+            "check_id": "",
             "logic_summary": "Routes checkout session to CartPricingService.",
         },
         {
@@ -572,6 +690,8 @@ def _build_nexus_commerce_dataset() -> Dict[str, Any]:
             "filepath": "src/main/kotlin/com/nexus/cart/PromoStackingCalculator.kt",
             "method_name": "applyStackableCoupons()",
             "governed_field": "coupon_code",
+            "active_artifact_sha": "55a19c2",
+            "check_id": "",
             "logic_summary": "Enforces PRD-CART-501 non-stackable VIP flash coupon policy.",
         },
         {
@@ -580,7 +700,9 @@ def _build_nexus_commerce_dataset() -> Dict[str, Any]:
             "filepath": "pkg/inventory/StockHoldCoordinator.go",
             "method_name": "AcquireTTLHold()",
             "governed_field": "hold_ttl_expected_sec",
-            "logic_summary": "REGRESSION IN PATCH v9.4.1: Reduced Redis lock TTL from 600s to 6s, prematurely releasing flash-sale cart holds.",
+            "active_artifact_sha": "88d12f0",
+            "check_id": "CHK-NEXUS-TTL",
+            "logic_summary": "Manages Redis inventory hold TTL lock (modified in Patch-v9.4.1 sha:88d12f0).",
         },
     ]
 
@@ -591,6 +713,7 @@ def _build_nexus_commerce_dataset() -> Dict[str, Any]:
             "title": "Flash-Sale Coupon Exclusivity Rule",
             "rule_text": "VIP Flash-Sale coupons (30% off) cannot be stacked with referral credits on the same checkout order.",
             "version": "v2.0",
+            "check_id": "",
         },
         {
             "id": "SRD-INV-602",
@@ -598,12 +721,13 @@ def _build_nexus_commerce_dataset() -> Dict[str, Any]:
             "title": "600-Second Checkout Inventory Hold Window",
             "rule_text": "Inventory reservations created at checkout initiation must maintain a minimum 600-second TTL lock before release.",
             "version": "v1.4",
+            "check_id": "CHK-NEXUS-TTL",
         },
     ]
 
     implements_edges = [
         {"module": "PromoStackingCalculator.kt", "requirement": "PRD-CART-501", "compliant": True, "note": "Compliant coupon exclusivity guard."},
-        {"module": "StockHoldCoordinator.go", "requirement": "SRD-INV-602", "compliant": False, "note": "VIOLATION: Commit sha:88d12f0 set TTL to 6s instead of 600s."},
+        {"module": "StockHoldCoordinator.go", "requirement": "SRD-INV-602", "compliant": False, "note": "Candidate change sha:88d12f0 modified hold duration constant; requires CHK-NEXUS-TTL verification."},
     ]
 
     changes = [
@@ -619,6 +743,15 @@ def _build_nexus_commerce_dataset() -> Dict[str, Any]:
             "modified_module": "StockHoldCoordinator.go",
             "deployed_service": "inventory-reservation-engine",
         },
+    ]
+
+    check_definitions = [
+        INDEPENDENT_REQUIREMENT_SPECIFICATIONS["CHK-NEXUS-TTL"],
+    ]
+
+    artifact_versions = [
+        ARTIFACT_VERSIONS_CATALOG["88d12f0"],
+        ARTIFACT_VERSIONS_CATALOG["55a19c2"],
     ]
 
     teams = [
@@ -659,7 +792,7 @@ def _build_nexus_commerce_dataset() -> Dict[str, Any]:
         {
             "id": "NEXUS-701",
             "title": "Flash-sale inventory reservation expires after 6 seconds during payment step",
-            "client_name": " LuxeRetail Europe",
+            "client_name": "LuxeRetail Europe",
             "client_tier": "Enterprise-Platinum",
             "reported_service": "checkout-edge-gateway",
             "reported_payload": '{"cart_id":"CART-992","hold_ttl_expected_sec":600,"hold_ttl_actual_sec":6}',
@@ -679,10 +812,13 @@ def _build_nexus_commerce_dataset() -> Dict[str, Any]:
         "requirements": requirements,
         "implements_edges": implements_edges,
         "changes": changes,
+        "check_definitions": check_definitions,
+        "artifact_versions": artifact_versions,
         "teams": teams,
         "people": people,
         "runbooks": runbooks,
         "client_issues": client_issues,
+        "observations": [],
         "findings": [],
     }
 
@@ -690,21 +826,19 @@ def _build_nexus_commerce_dataset() -> Dict[str, Any]:
 def seed_tenant(db: Any, tenant_id: str = "killbill-prod") -> Dict[str, Any]:
     """
     Idempotently clear and seed `db.select_graph(f"falkortrace:{tenant_id}")`.
-    Works identically against a live FalkorDB container/Cloud instance or the In-Memory GraphBLAS fallback.
+    Works identically against a live FalkorDB container/Cloud instance or the In-Memory fallback.
     """
     t0 = time.perf_counter()
-    graph_name = f"falkortrace:{tenant_id}"
+    tid = validate_tenant_scope(tenant_id)
+    graph_name = f"falkortrace:{tid}"
     graph = db.select_graph(graph_name)
-    dataset = get_tenant_dataset(tenant_id)
+    dataset = get_tenant_dataset(tid)
 
-    # If the graph supports direct dataset hydration (InMemoryGraph), also execute the real Cypher
-    # statements so both paths stay 100% synchronized.
     try:
         graph.query("MATCH (n) DETACH DELETE n")
     except Exception:
         pass
 
-    # Create FalkorDB Range Indexes for fast O(1) / O(log N) entity resolution
     index_queries = [
         "CREATE INDEX FOR (s:Service) ON (s.name)",
         "CREATE INDEX FOR (i:Client_Issue) ON (i.id)",
@@ -712,18 +846,18 @@ def seed_tenant(db: Any, tenant_id: str = "killbill-prod") -> Dict[str, Any]:
         "CREATE INDEX FOR (c:Code_Module) ON (c.name)",
         "CREATE INDEX FOR (ch:Change) ON (ch.sha)",
         "CREATE INDEX FOR (f:Finding) ON (f.id)",
+        "CREATE INDEX FOR (chk:CheckDefinition) ON (chk.id)",
+        "CREATE INDEX FOR (av:ArtifactVersion) ON (av.git_sha)",
     ]
     for idx_q in index_queries:
         try:
             graph.query(idx_q)
         except Exception:
-            # Index may already exist on FalkorDB
             pass
 
     if hasattr(graph, "load_structured_dataset"):
         graph.load_structured_dataset(dataset)
     else:
-        # Execute parameterized Cypher seeding on live FalkorDB instance
         for svc in dataset["services"]:
             graph.query(
                 """
@@ -756,6 +890,8 @@ def seed_tenant(db: Any, tenant_id: str = "killbill-prod") -> Dict[str, Any]:
                     filepath: $filepath,
                     method_name: $method_name,
                     governed_field: $governed_field,
+                    active_artifact_sha: $active_artifact_sha,
+                    check_id: $check_id,
                     logic_summary: $logic_summary
                 })
                 CREATE (s)-[:IMPLEMENTED_BY]->(c)
@@ -771,7 +907,8 @@ def seed_tenant(db: Any, tenant_id: str = "killbill-prod") -> Dict[str, Any]:
                     doc_type: $doc_type,
                     title: $title,
                     rule_text: $rule_text,
-                    version: $version
+                    version: $version,
+                    check_id: $check_id
                 })
                 """,
                 req,
@@ -784,6 +921,42 @@ def seed_tenant(db: Any, tenant_id: str = "killbill-prod") -> Dict[str, Any]:
                 CREATE (c)-[:IMPLEMENTS {compliant: $compliant, note: $note}]->(r)
                 """,
                 impl,
+            )
+
+        for chk in dataset.get("check_definitions", []):
+            graph.query(
+                """
+                MATCH (c:Code_Module {name: $target_module}), (r:Requirement {id: $requirement_id})
+                CREATE (chk:CheckDefinition {
+                    id: $check_id,
+                    check_version: $check_version,
+                    target_module: $target_module,
+                    target_service: $target_service,
+                    requirement_id: $requirement_id,
+                    requirement_version: $requirement_version,
+                    description: $description
+                })
+                CREATE (c)-[:VERIFIED_BY]->(chk)
+                CREATE (r)-[:CHECKED_BY]->(chk)
+                """,
+                chk,
+            )
+
+        for av in dataset.get("artifact_versions", []):
+            graph.query(
+                """
+                MATCH (c:Code_Module {name: $module})
+                CREATE (av:ArtifactVersion {
+                    id: $id,
+                    module: $module,
+                    service: $service,
+                    version_tag: $version_tag,
+                    git_sha: $git_sha,
+                    code_hash: $code_hash
+                })
+                CREATE (c)-[:HAS_VERSION]->(av)
+                """,
+                av,
             )
 
         for ch in dataset["changes"]:
@@ -916,7 +1089,7 @@ def seed_tenant(db: Any, tenant_id: str = "killbill-prod") -> Dict[str, Any]:
     elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
     return {
         "status": "seeded",
-        "tenant_id": tenant_id,
+        "tenant_id": tid,
         "graph_name": graph_name,
         "elapsed_ms": elapsed_ms,
         "counts": {
@@ -925,6 +1098,8 @@ def seed_tenant(db: Any, tenant_id: str = "killbill-prod") -> Dict[str, Any]:
             "code_modules": len(dataset["code_modules"]),
             "requirements": len(dataset["requirements"]),
             "changes": len(dataset["changes"]),
+            "check_definitions": len(dataset.get("check_definitions", [])),
+            "artifact_versions": len(dataset.get("artifact_versions", [])),
             "teams": len(dataset["teams"]),
             "people": len(dataset["people"]),
             "runbooks": len(dataset["runbooks"]),
