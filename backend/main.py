@@ -534,9 +534,24 @@ def compare_depth_triage(req: TriageRequest) -> Dict[str, Any]:
     }
 
 
+def require_demo_or_admin_token(
+    x_falkortrace_admin_token: Optional[str] = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
+) -> None:
+    """Allow sandboxed demo evaluation routes when no admin token is configured,
+    while enforcing token authentication whenever FALKORTRACE_ADMIN_TOKEN is set.
+    """
+    expected = os.getenv("FALKORTRACE_ADMIN_TOKEN", "").strip()
+    if not expected:
+        return
+    provided = _provided_admin_token(x_falkortrace_admin_token, authorization)
+    if not provided or not hmac.compare_digest(provided, expected):
+        raise HTTPException(status_code=401, detail="Admin authentication required")
+
+
 @app.post("/api/seed")
 def reseed_tenant_graph(
-    req: SeedRequest, _admin_token: None = Depends(require_admin_token)
+    req: SeedRequest, _admin_token: None = Depends(require_demo_or_admin_token)
 ) -> Dict[str, Any]:
     db = get_db()
     return seed_tenant(db, req.tenant_id)
@@ -563,7 +578,7 @@ def clear_tenant_memory(
 
 @app.post("/api/remediate")
 def remediate_patch_regression(
-    req: RemediateRequest, _admin_token: None = Depends(require_admin_token)
+    req: RemediateRequest, _admin_token: None = Depends(require_demo_or_admin_token)
 ) -> Dict[str, Any]:
     db = get_db()
     ensure_tenant_seeded(db, req.tenant_id)
@@ -576,7 +591,7 @@ def remediate_patch_regression(
 
 @app.post("/api/inject-fault")
 def inject_chaos_fault_endpoint(
-    req: InjectFaultRequest, _admin_token: None = Depends(require_admin_token)
+    req: InjectFaultRequest, _admin_token: None = Depends(require_demo_or_admin_token)
 ) -> Dict[str, Any]:
     db = get_db()
     ensure_tenant_seeded(db, req.tenant_id)
@@ -595,7 +610,7 @@ def inject_chaos_fault_endpoint(
 
 @app.post("/api/benchmark")
 def execute_head_to_head_benchmark(
-    req: SeedRequest, _admin_token: None = Depends(require_admin_token)
+    req: SeedRequest, _admin_token: None = Depends(require_demo_or_admin_token)
 ) -> Dict[str, Any]:
     return run_head_to_head_benchmark(tenant_id=req.tenant_id)
 

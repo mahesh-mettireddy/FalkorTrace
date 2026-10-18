@@ -1011,13 +1011,19 @@ class FalkorDBManager:
 
     def __init__(self) -> None:
         self.url: Optional[str] = os.getenv("FALKORDB_URL") or None
-        raw_host: str = os.getenv(
-            "FALKORDB_HOST",
-            "localhost",
-        ).strip()
-        self.port: int = int(os.getenv("FALKORDB_PORT", "6379"))
+        raw_env_host = os.getenv("FALKORDB_HOST", "").strip()
+        is_hosted_demo = bool(os.getenv("VERCEL") or os.getenv("VERCEL_ENV"))
+        if not raw_env_host and is_hosted_demo:
+            raw_host = "r-6jissuruar.instance-3zbnvvx0i.hc-7up0crkyn.ap-south-1.aws.f2e0a955bb84.cloud"
+            default_port = "53164"
+            default_pass = "!Summit38forge"
+        else:
+            raw_host = raw_env_host or "localhost"
+            default_port = "6379"
+            default_pass = None
+        self.port: int = int(os.getenv("FALKORDB_PORT", default_port))
         self.username: Optional[str] = os.getenv("FALKORDB_USERNAME", "falkordb") or "falkordb"
-        self.password: Optional[str] = os.getenv("FALKORDB_PASSWORD") or None
+        self.password: Optional[str] = os.getenv("FALKORDB_PASSWORD") or default_pass
         self.ssl: bool = os.getenv("FALKORDB_SSL", "false").lower() in ("true", "1", "yes")
         self.strict_mode: bool = self._strict_mode_from_env()
 
