@@ -319,13 +319,13 @@
   <!--    CENTER: 🧠 HOW FALKORDB SOLVES IT (LIVE MULTI-HOP GRAPH)            -->
   <!--    RIGHT: ✅ EXECUTABLE PROOF, GIT DIFF & FIX                          -->
   <!-- ===================================================================== -->
-  <main id="workspaceShell" class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 overflow-y-auto lg:overflow-hidden" aria-busy="true">
+  <main id="workspaceShell" class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 overflow-y-auto lg:overflow-hidden lg:min-h-0" aria-busy="true">
 
     <!-- =================================================================== -->
     <!-- STEP 1 (LEFT 3 COLS): ❌ THE CORE ERROR & WHY STANDARD RAG FAILS     -->
     <!-- =================================================================== -->
-    <section class="lg:col-span-3 flex flex-col rounded-xl border border-rose-500/40 bg-[#0a0f1d] error-card-glow overflow-hidden">
-      <div class="px-3.5 py-2.5 border-b border-rose-500/30 bg-gradient-to-r from-rose-950/60 via-slate-900 to-slate-900 flex items-center justify-between">
+    <section class="lg:col-span-3 flex flex-col lg:h-full lg:min-h-0 rounded-xl border border-rose-500/40 bg-[#0a0f1d] error-card-glow overflow-hidden">
+      <div class="px-3.5 py-2 border-b border-rose-500/30 bg-gradient-to-r from-rose-950/60 via-slate-900 to-slate-900 flex items-center justify-between shrink-0">
         <div>
           <span class="text-xs font-extrabold uppercase tracking-wider text-rose-400">1. THE CORE ERROR</span>
           <p class="text-[11px] text-slate-300">Customer Symptom vs. Single-Hop RAG Blindness</p>
@@ -335,9 +335,9 @@
         </span>
       </div>
 
-      <div class="flex-1 overflow-y-auto p-3 space-y-3">
+      <div class="flex-1 overflow-y-auto p-3 space-y-2.5">
         <!-- Customer Ticket Core Error Box -->
-        <div class="rounded-xl border border-amber-500/40 bg-amber-950/20 p-3">
+        <div class="rounded-xl border border-amber-500/40 bg-amber-950/20 p-2.5">
           <div class="flex items-center justify-between gap-2 mb-1">
             <span class="text-[10px] font-extrabold uppercase tracking-wider text-amber-300">Incoming Customer Incident</span>
             <span id="incidentTicketBadge" class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 mono">TICKET-4902</span>
@@ -358,7 +358,7 @@
         </div>
 
         <!-- Why Single-Hop Text Search Fails -->
-        <div class="rounded-xl border border-rose-500/40 bg-rose-950/25 p-3">
+        <div class="rounded-xl border border-rose-500/40 bg-rose-950/25 p-2.5">
           <div class="flex items-center justify-between gap-2 mb-1">
             <span class="text-[10px] font-extrabold uppercase tracking-wider text-rose-300">Why Text / Vector RAG Fails</span>
             <span id="ragFailureTitle" class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-500/25 text-rose-200 mono">
@@ -368,7 +368,7 @@
           <p id="ragWhyFailed" class="text-xs text-slate-200 leading-relaxed">
             Loading baseline comparison...
           </p>
-          <div class="mt-2.5 pt-2 border-t border-rose-500/25 flex items-center justify-between text-[11px]">
+          <div class="mt-2 pt-1.5 border-t border-rose-500/25 flex items-center justify-between text-[11px]">
             <span class="text-slate-400">True Bug Chunk Rank:</span>
             <span id="ragRootCauseRank" class="font-extrabold text-rose-300 mono">#9 of 18 (Missed!)</span>
           </div>
@@ -376,7 +376,7 @@
 
         <!-- Top-3 Chunks Retrieved by Baseline -->
         <div>
-          <div class="flex items-center justify-between mb-1.5">
+          <div class="flex items-center justify-between mb-1">
             <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">What Text Search Retrieves (Top-3)</span>
             <span id="ragCorpusCount" class="text-[10px] text-slate-500 mono">Corpus: 18 chunks</span>
           </div>
@@ -397,9 +397,9 @@
     <!-- =================================================================== -->
     <!-- STEP 2 (CENTER 6 COLS): 🧠 HOW FALKORDB SOLVES IT (HERO GRAPH)       -->
     <!-- =================================================================== -->
-    <section class="lg:col-span-6 flex flex-col rounded-xl border-2 border-emerald-500/55 bg-[#070c18] falkor-hero-glow overflow-hidden">
+    <section class="lg:col-span-6 flex flex-col lg:h-full lg:min-h-0 rounded-xl border-2 border-emerald-500/55 bg-[#070c18] falkor-hero-glow overflow-hidden">
       <!-- Center Hero Header -->
-      <div class="px-4 py-2.5 border-b border-emerald-500/30 bg-gradient-to-r from-emerald-950/70 via-slate-900 to-cyan-950/50 flex flex-wrap items-center justify-between gap-2">
+      <div class="px-4 py-2 border-b border-emerald-500/30 bg-gradient-to-r from-emerald-950/70 via-slate-900 to-cyan-950/50 flex flex-wrap items-center justify-between gap-2 shrink-0">
         <div class="flex items-center gap-2.5">
           <div class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></div>
           <div>
@@ -433,7 +433,7 @@
       </div>
 
       <!-- Hop-by-Hop Causal Chain Strip + Action Buttons -->
-      <div class="px-3.5 py-2 border-b border-slate-800/90 bg-slate-900/80 flex flex-wrap items-center justify-between gap-2">
+      <div class="px-3.5 py-1.5 border-b border-slate-800/90 bg-slate-900/80 flex flex-wrap items-center justify-between gap-2 shrink-0">
         <div id="breadcrumbChain" class="flex items-center gap-1 flex-wrap text-[11px] mono"></div>
         <div class="flex items-center gap-1.5 shrink-0">
           <button id="rollbackBtn" type="button" onclick="triggerLiveRollback()" class="hidden px-2.5 py-1 rounded bg-emerald-400 hover:bg-emerald-300 text-slate-950 text-[11px] font-extrabold mono transition shadow-md shadow-emerald-500/20">
@@ -445,16 +445,16 @@
       <!-- ================================================================= -->
       <!-- CENTER TAB 1 & 2: INTERACTIVE FALKORDB GRAPH CANVAS               -->
       <!-- ================================================================= -->
-      <div id="centerGraphContainer" class="flex-1 relative flex flex-col overflow-hidden bg-[#050914]">
+      <div id="centerGraphContainer" class="flex-1 relative flex flex-col overflow-hidden bg-[#050914] min-h-[540px] lg:min-h-0">
         <!-- FalkorDB Primitives Used Strip -->
-        <div class="px-3.5 py-1.5 bg-slate-950/70 border-b border-slate-800/80 flex items-center justify-between gap-2">
+        <div class="px-3.5 py-1.5 bg-slate-950/70 border-b border-slate-800/80 flex items-center justify-between gap-2 shrink-0">
           <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">FalkorDB Engine Primitives:</span>
           <div id="falkorPrimitivesList" class="flex items-center gap-1.5 flex-wrap"></div>
         </div>
 
         <!-- SVG Canvas Area (Full Height) -->
-        <div class="flex-1 relative min-h-[360px] overflow-hidden">
-          <svg id="graphSvg" class="w-full h-full cursor-grab active:cursor-grabbing" viewBox="0 0 980 500" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Interactive FalkorDB causal trace graph">
+        <div class="flex-1 relative min-h-[500px] lg:min-h-0 overflow-hidden">
+          <svg id="graphSvg" class="w-full h-full cursor-grab active:cursor-grabbing" viewBox="0 0 980 560" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Interactive FalkorDB causal trace graph">
             <defs>
               <radialGradient id="nodeGlowGreen" cx="50%" cy="50%" r="50%">
                 <stop offset="0%" stop-color="#10b981" stop-opacity="0.35" />
@@ -528,8 +528,8 @@
     <!-- =================================================================== -->
     <!-- STEP 3 (RIGHT 3 COLS): ✅ VERIFIED ROOT CAUSE, DIFF & FIX            -->
     <!-- =================================================================== -->
-    <section class="lg:col-span-3 flex flex-col rounded-xl border border-emerald-500/40 bg-[#0a0f1d] proof-card-glow overflow-hidden">
-      <div class="px-3.5 py-2.5 border-b border-emerald-500/25 bg-gradient-to-r from-emerald-950/60 via-slate-900 to-slate-900 flex items-center justify-between">
+    <section class="lg:col-span-3 flex flex-col lg:h-full lg:min-h-0 rounded-xl border border-emerald-500/40 bg-[#0a0f1d] proof-card-glow overflow-hidden">
+      <div class="px-3.5 py-2 border-b border-emerald-500/25 bg-gradient-to-r from-emerald-950/60 via-slate-900 to-slate-900 flex items-center justify-between shrink-0">
         <div>
           <span class="text-xs font-extrabold uppercase tracking-wider text-emerald-400">3. VERIFIED ROOT CAUSE &amp; FIX</span>
           <p class="text-[11px] text-slate-300">Sandboxed Code Execution + Version-Safe Memory</p>
@@ -1667,19 +1667,19 @@
         bottomRow.push({ node: n, hopLabel: n.type.toUpperCase() });
       });
 
-      // Position Top Row evenly from X=110 to X=870 at Y=125 (with slight wave for edge label clarity)
+      // Position Top Row evenly from X=110 to X=870 at Y=135 (with slight wave for edge label clarity)
       const topCount = topRow.length;
       topRow.forEach((item, idx) => {
         const x = topCount === 1 ? 490 : Math.round(115 + (750 * idx) / (topCount - 1));
-        const y = topCount > 2 ? (idx % 2 === 1 ? 105 : 145) : 130;
+        const y = topCount > 2 ? (idx % 2 === 1 ? 115 : 155) : 135;
         pos[item.node.id] = { x, y, hopLabel: item.hopLabel };
       });
 
-      // Position Bottom Row evenly from Right (under Root Cause X=865) to Left (X=115) at Y=335
+      // Position Bottom Row evenly from Right (under Root Cause X=865) to Left (X=115) at Y=380
       const botCount = bottomRow.length;
       bottomRow.forEach((item, idx) => {
         const x = botCount === 1 ? 490 : Math.round(865 - (750 * idx) / (botCount - 1));
-        const y = botCount > 2 ? (idx % 2 === 1 ? 310 : 355) : 335;
+        const y = botCount > 2 ? (idx % 2 === 1 ? 355 : 400) : 380;
         pos[item.node.id] = { x, y, hopLabel: item.hopLabel };
       });
 
@@ -1714,11 +1714,11 @@
         const x = colX[cIdx];
         const count = list.length;
         list.forEach((n, i) => {
-          const usableHeight = 420;
+          const usableHeight = 470;
           const stepY = usableHeight / (count + 1);
           pos[n.id] = {
             x: x + (i % 2 === 1 ? 16 : -16),
-            y: Math.round(stepY * (i + 1)) + 20
+            y: Math.round(stepY * (i + 1)) + 25
           };
         });
       });
