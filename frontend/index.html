@@ -1529,7 +1529,8 @@
         const p2 = posMap[e.to];
         if (!p1 || !p2) return '';
         const isHi = centerViewMode === 'subgraph' || highlightEdgeSet.has(`${e.from}->${e.to}`);
-        const isViolates = e.compliant === false || String(e.label || '').includes('VIOLATES');
+        const isPayloadRejectedEdge = res.verdict === 'DATA_PAYLOAD_ISSUE' && e.from === res.ticket_id;
+        const isViolates = e.compliant === false || String(e.label || '').includes('VIOLATES') || isPayloadRejectedEdge;
         const stroke = isViolates ? '#f43f5e' : (isHi ? '#10b981' : '#1e293b');
         const width = isHi || isViolates ? (centerViewMode === 'subgraph' ? 3.0 : 2.4) : 1.1;
         const opacity = (centerViewMode === 'subgraph' || highlightNodeSet.size === 0 || isHi || isViolates) ? 1.0 : 0.22;
@@ -1537,11 +1538,9 @@
         const animClass = (isHi || isViolates) ? 'active-edge-anim' : '';
 
         // Slight quadratic curve when nodes are on the same Y or vertical to keep edges distinct
-        const dx = p2.x - p1.x;
-        const dy = p2.y - p1.y;
         const midX = (p1.x + p2.x) / 2;
         const midY = (p1.y + p2.y) / 2;
-        const edgeText = shortEdgeLabel(e.label);
+        const edgeText = isPayloadRejectedEdge ? 'REJECTED PAYLOAD (HTTP 400)' : shortEdgeLabel(e.label);
         const textWidth = Math.max(54, edgeText.length * 5.8 + 10);
 
         return `
@@ -1562,14 +1561,16 @@
         if (!p) return '';
         const style = NODE_COLORS[n.type] || NODE_COLORS.Service;
         const isHi = centerViewMode === 'subgraph' || highlightNodeSet.has(n.id) || n.id === res.queried_service;
-        const isRootCause = n.id === res.root_cause_service || n.type === 'Change';
+        const isBadPayloadNode = res.verdict === 'DATA_PAYLOAD_ISSUE' && n.type === 'Client_Issue';
+        const isRootCause = n.id === res.root_cause_service || n.type === 'Change' || isBadPayloadNode;
+        const isErrorHighlight = (isRootCause && res.verdict === 'PATCH_REGRESSION') || isBadPayloadNode;
         const opacity = (centerViewMode === 'subgraph' || highlightNodeSet.size === 0 || isHi) ? 1.0 : 0.35;
         const radius = centerViewMode === 'subgraph' ? 22 : (isHi ? 16 : 11);
-        const glowUrl = (isRootCause && res.verdict === 'PATCH_REGRESSION') ? 'url(#nodeGlowRed)' : 'url(#nodeGlowGreen)';
+        const glowUrl = isErrorHighlight ? 'url(#nodeGlowRed)' : 'url(#nodeGlowGreen)';
         const ringHtml = isHi
           ? `
             <circle cx="${escapeHtml(p.x)}" cy="${escapeHtml(p.y)}" r="${escapeHtml(radius + 14)}" fill="${glowUrl}" />
-            <circle cx="${escapeHtml(p.x)}" cy="${escapeHtml(p.y)}" r="${escapeHtml(radius + 5)}" fill="none" stroke="${isRootCause && res.verdict === 'PATCH_REGRESSION' ? '#f43f5e' : style.stroke}" stroke-width="1.8" stroke-dasharray="4 3" />
+            <circle cx="${escapeHtml(p.x)}" cy="${escapeHtml(p.y)}" r="${escapeHtml(radius + 5)}" fill="none" stroke="${isErrorHighlight ? '#f43f5e' : style.stroke}" stroke-width="1.8" stroke-dasharray="4 3" />
           `
           : '';
         const payloadStr = encodeURIComponent(JSON.stringify(n));
@@ -1577,14 +1578,16 @@
         const dispLabel = centerViewMode === 'subgraph' ? shortLabel(n.label, 24) : shortLabel(n.label, 18);
         const badgeW = Math.max(64, hopBadge.length * 5.8 + 12);
         const labelW = Math.max(76, dispLabel.length * 6.4 + 14);
+        const nodeFill = isBadPayloadNode ? '#4c0519' : style.fill;
+        const nodeStroke = isBadPayloadNode ? '#f43f5e' : style.stroke;
 
         return `
           <g class="cursor-pointer" opacity="${escapeHtml(opacity)}" data-node-payload="${escapeHtml(payloadStr)}" role="button" tabindex="0" aria-label="Inspect ${escapeHtml(n.label)}">
             ${ringHtml}
-            <circle cx="${escapeHtml(p.x)}" cy="${escapeHtml(p.y)}" r="${escapeHtml(radius)}" fill="${style.fill}" stroke="${style.stroke}" stroke-width="${isHi ? 2.5 : 1.2}" />
+            <circle cx="${escapeHtml(p.x)}" cy="${escapeHtml(p.y)}" r="${escapeHtml(radius)}" fill="${nodeFill}" stroke="${nodeStroke}" stroke-width="${isHi ? 2.5 : 1.2}" />
             ${(centerViewMode === 'subgraph' || isHi) ? `
               <rect x="${escapeHtml(p.x - badgeW / 2)}" y="${escapeHtml(p.y - radius - 20)}" width="${escapeHtml(badgeW)}" height="13" rx="3.5" fill="#050914" fill-opacity="0.9" />
-              <text x="${escapeHtml(p.x)}" y="${escapeHtml(p.y - radius - 10.5)}" text-anchor="middle" fill="${isRootCause && res.verdict === 'PATCH_REGRESSION' ? '#fda4af' : '#94a3b8'}" font-size="8.5" font-family="JetBrains Mono" font-weight="700">
+              <text x="${escapeHtml(p.x)}" y="${escapeHtml(p.y - radius - 10.5)}" text-anchor="middle" fill="${isErrorHighlight ? '#fda4af' : '#94a3b8'}" font-size="8.5" font-family="JetBrains Mono" font-weight="700">
                 ${escapeHtml(hopBadge)}
               </text>
             ` : ''}
@@ -1626,7 +1629,10 @@
 
       // 1. Put Ticket / Memory Finding at start of Top Row
       nodes.filter(n => n.type === 'Client_Issue' || n.type === 'Finding').forEach(n => {
-        topRow.push({ node: n, hopLabel: n.type === 'Client_Issue' ? '1. TICKET' : 'MEMORY HIT' });
+        const ticketBadge = res.verdict === 'DATA_PAYLOAD_ISSUE' && n.type === 'Client_Issue'
+          ? '❌ BAD CLIENT PAYLOAD'
+          : (n.type === 'Client_Issue' ? '1. TICKET' : '⚡ O(1) MEMORY HIT');
+        topRow.push({ node: n, hopLabel: ticketBadge });
         placed.add(n.id);
       });
 
