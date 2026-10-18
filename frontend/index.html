@@ -128,12 +128,6 @@
           <span>12-Case Benchmark (33.3% vs 100%)</span>
         </button>
 
-        <!-- Simulate Chaos Fault -->
-        <button type="button" onclick="openChaosModal()" aria-label="Open fault simulation controls" class="px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-300 font-semibold text-xs flex items-center gap-1 transition" title="Inject a breaking downstream commit into FalkorDB and watch the graph catch it">
-          <span>💥</span>
-          <span class="hidden sm:inline">Inject Fault</span>
-        </button>
-
         <!-- Reset Graph -->
         <button type="button" onclick="resetTenantGraph()" aria-label="Reset tenant graph" class="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs mono transition" title="Reset demo graph to clean default state">
           🔄 Reset
@@ -156,6 +150,7 @@
       <span id="track01State"></span>
       <span id="track02State"></span>
       <span id="track03State"></span>
+      <input id="askInput" type="hidden" value="" />
     </div>
   </header>
 
@@ -210,28 +205,16 @@
         </button>
       </div>
 
-      <!-- Right Controls: Depth Slider + Natural Language Search -->
+      <!-- Right Controls: Depth Slider + Compare 1 vs 4 -->
       <div class="flex items-center gap-2 shrink-0">
         <div class="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-lg px-2.5 py-1" title="Variable-length Cypher traversal depth [:DEPENDS_ON*1..depth]">
           <span class="text-[10px] font-bold uppercase text-slate-400">Hops:</span>
-          <input id="depthSlider" aria-label="Graph traversal depth in hops" type="range" min="1" max="4" value="4" oninput="onDepthChange(this.value)" class="w-16 accent-emerald-400 cursor-pointer" />
+          <input id="depthSlider" aria-label="Graph traversal depth in hops" type="range" min="1" max="4" value="4" oninput="onDepthChange(this.value)" class="w-20 accent-emerald-400 cursor-pointer" />
           <span id="depthValue" class="text-xs font-bold text-emerald-400 mono">4</span>
-          <button type="button" onclick="openDepthCompareModal()" class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/25 transition">
-            Compare 1 vs 4
+          <button type="button" onclick="openDepthCompareModal()" class="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/25 transition">
+            Compare 1 vs 4 Hops
           </button>
         </div>
-
-        <form onsubmit="submitCustomQuestion(event)" class="flex items-center gap-1.5" aria-label="Ask FalkorTrace a question">
-          <input
-            id="askInput"
-            type="text"
-            placeholder="Ask e.g. Why was ACME overcharged on TICKET-4902?"
-            class="w-52 xl:w-64 bg-slate-900 border border-slate-700/90 focus:border-emerald-400 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none"
-          />
-          <button type="submit" class="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition shrink-0">
-            Trace
-          </button>
-        </form>
         <span id="scenarioStatus" class="hidden xl:inline text-[10px] text-slate-400 mono" role="status" aria-live="polite">Ready</span>
       </div>
     </div>
