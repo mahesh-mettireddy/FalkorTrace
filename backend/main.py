@@ -27,7 +27,6 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from backend.agent import (
-    configure_llm_runtime,
     get_llm_status,
     resolve_natural_language_query,
     run_head_to_head_benchmark,
@@ -165,12 +164,6 @@ class InjectFaultRequest(BaseModel):
     summary: str = Field(default="feat(tax): bypass regional VAT rounding cache on multi-hop invoices")
 
 
-class LLMConfigRequest(BaseModel):
-    provider: str = Field(default="auto")
-    api_key: str = Field(default="")
-    model: str = Field(default="")
-
-
 class FalkorDBConfigRequest(BaseModel):
     host: str = Field(default="localhost")
     port: int = Field(default=6379)
@@ -205,14 +198,6 @@ def health_check() -> Dict[str, Any]:
         "tenants": TENANT_METADATA,
         "mcp_tools_count": len(list_mcp_tools()),
     }
-
-
-@app.post("/api/config/llm")
-def update_llm_config(
-    req: LLMConfigRequest, _admin_token: None = Depends(require_admin_token)
-) -> Dict[str, Any]:
-    llm_state = configure_llm_runtime(provider=req.provider, api_key=req.api_key, model=req.model)
-    return {"status": "ok", "llm": llm_state}
 
 
 @app.post("/api/config/falkordb")

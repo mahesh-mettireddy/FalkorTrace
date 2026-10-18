@@ -195,46 +195,43 @@ def accepts(sentence: str, answer: Dict[str, Any]) -> Tuple[bool, str]:
     return True, "ok (entity references validated against FalkorDB result set)"
 
 
-# Runtime LLM configuration
-_LLM_RUNTIME: Dict[str, str] = {
-    "provider": "gemini" if os.getenv("GEMINI_API_KEY") else ("openai" if os.getenv("OPENAI_API_KEY") else "auto"),
-    "api_key": (os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip(),
-    "model": "",
-}
+def _backend_llm_settings() -> Tuple[str, str, str]:
+    """Read LLM credentials exclusively from backend environment configuration.
 
+    API keys intentionally never arrive through a browser request. Local runs can
+    use an ignored ``.env`` file; hosted runs should configure these variables in
+    the server/provider secret store.
+    """
+    requested_provider = os.getenv("FALKORTRACE_LLM_PROVIDER", "auto").strip().lower()
+    model = os.getenv("FALKORTRACE_LLM_MODEL", "").strip()
+    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
 
-def configure_llm_runtime(provider: str = "auto", api_key: str = "", model: str = "") -> Dict[str, Any]:
-    """Configure Gemini or OpenAI API key at runtime for live LLM + FalkorDB synthesis."""
-    key = (api_key or "").strip()
-    prov = (provider or "auto").strip().lower()
-    if key and prov == "auto":
-        prov = "openai" if key.startswith("sk-") else "gemini"
-    _LLM_RUNTIME["provider"] = prov
-    _LLM_RUNTIME["api_key"] = key
-    _LLM_RUNTIME["model"] = (model or "").strip()
-    return get_llm_status()
+    if requested_provider == "gemini":
+        return "gemini", gemini_key, model or "gemini-2.0-flash"
+    if requested_provider == "openai":
+        return "openai", openai_key, model or "gpt-4o-mini"
+    if gemini_key:
+        return "gemini", gemini_key, model or "gemini-2.0-flash"
+    if openai_key:
+        return "openai", openai_key, model or "gpt-4o-mini"
+    return "auto", "", model or "falkordb-deterministic-synthesizer"
 
 
 def get_llm_status() -> Dict[str, Any]:
-    key = _LLM_RUNTIME.get("api_key") or os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
-    prov = _LLM_RUNTIME.get("provider", "auto")
-    if key and prov == "auto":
-        prov = "openai" if key.startswith("sk-") else "gemini"
-    model = _LLM_RUNTIME.get("model") or ("gpt-4o-mini" if prov == "openai" else "gemini-2.0-flash")
+    prov, key, model = _backend_llm_settings()
     return {
         "configured": bool(key),
         "provider": prov if key else "deterministic-graph-template",
-        "model": model if key else "falkordb-deterministic-synthesizer",
+        "model": model,
+        "configuration_source": "backend_environment",
     }
 
 
 def _maybe_enhance_with_llm(
-    deterministic_summary: str,
-    answer: Dict[str, Any],
-    override_key: Optional[str] = None,
-    override_provider: Optional[str] = None,
+    deterministic_summary: str, answer: Dict[str, Any]
 ) -> Tuple[str, Dict[str, Any]]:
-    raw_key = (override_key or _LLM_RUNTIME.get("api_key") or os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()
+    prov, raw_key, model_name = _backend_llm_settings()
     if not raw_key:
         ok, reason = accepts(deterministic_summary, answer)
         return deterministic_summary, {
@@ -244,10 +241,6 @@ def _maybe_enhance_with_llm(
             "mode": "deterministic-graph-template",
             "checked_tokens": sorted(list(SERVICE_TOKEN_RE.findall(deterministic_summary.lower()))),
         }
-
-    prov = (override_provider or _LLM_RUNTIME.get("provider") or "auto").lower()
-    if prov == "auto":
-        prov = "openai" if raw_key.startswith("sk-") else "gemini"
 
     prompt = (
         "You are an enterprise SRE incident investigation synthesizer grounded by FalkorDB. "
@@ -260,7 +253,6 @@ def _maybe_enhance_with_llm(
         candidate = ""
         mode_label = ""
         if prov == "openai":
-            model_name = _LLM_RUNTIME.get("model") or "gpt-4o-mini"
             resp = httpx.post(
                 "https://api.openai.com/v1/chat/completions",
                 headers={"Authorization": f"Bearer {raw_key}", "Content-Type": "application/json"},
@@ -277,7 +269,6 @@ def _maybe_enhance_with_llm(
                 candidate = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
                 mode_label = f"openai-{model_name}-guarded"
         else:
-            model_name = _LLM_RUNTIME.get("model") or "gemini-2.0-flash"
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={raw_key}"
             resp = httpx.post(
                 url,

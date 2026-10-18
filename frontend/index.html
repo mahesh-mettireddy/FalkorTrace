@@ -188,11 +188,9 @@
           <span class="hidden sm:inline">Simulate Fault</span>
         </button>
 
-        <!-- Configure Live LLM API Key (Gemini / OpenAI) -->
-        <button type="button" onclick="openLLMModal()" aria-label="Open LLM configuration" id="llmStatusBtn" class="px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition">
-          <span>🔑</span>
-          <span id="llmBtnLabel">LLM Key (Auto/Deterministic)</span>
-        </button>
+        <span id="llmStatusBadge" class="px-2.5 py-1.5 rounded-lg bg-slate-800/90 border border-slate-700 text-slate-300 text-xs mono" title="LLM credentials are configured on the backend only">
+          LLM: backend-managed
+        </span>
 
         <!-- FalkorDB Cloud Connection Modal -->
         <button type="button" onclick="openAdminModal()" class="px-2 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-200 text-xs mono transition" title="Set an optional in-memory admin token for protected routes" aria-label="Open admin token controls">
@@ -815,41 +813,6 @@
   </div>
 
   <!-- ===================================================================== -->
-  <!-- MODAL 3: CONFIGURE LIVE LLM API KEY (GEMINI / OPENAI)                 -->
-  <!-- ===================================================================== -->
-  <div id="llmModal" role="dialog" aria-modal="true" aria-labelledby="llmModalTitle" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="w-full max-w-md rounded-2xl border border-cyan-500/40 bg-[#090e1c] shadow-2xl overflow-hidden">
-      <div class="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-gradient-to-r from-cyan-950/60 to-slate-900">
-        <h2 id="llmModalTitle" class="text-sm font-extrabold text-white">🔑 Connect Live LLM (Gemini / OpenAI) + <code class="mono">accepts()</code> Gate</h2>
-        <button type="button" aria-label="Close LLM dialog" onclick="closeLLMModal()" class="text-slate-400 hover:text-white text-sm font-bold">✕</button>
-      </div>
-      <div class="p-5 space-y-3 text-xs">
-        <p class="text-slate-300 leading-relaxed">
-          Provide a <strong>Google Gemini</strong> (<code class="mono">AIza...</code>) or <strong>OpenAI</strong> (<code class="mono">sk-...</code>) API key to enable live LLM synthesis grounded strictly by FalkorDB's <code class="mono text-emerald-300">allowed_tokens</code> and verified post-generation by <code class="mono text-cyan-300">accepts(sentence, answer)</code>. Leave blank to use the zero-key Deterministic Graph Synthesizer.
-        </p>
-        <div>
-          <label for="llmProviderSelect" class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Provider</label>
-          <select id="llmProviderSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white">
-            <option value="auto">Auto-Detect from Key (Gemini or OpenAI)</option>
-            <option value="gemini">Google Gemini (gemini-2.0-flash)</option>
-            <option value="openai">OpenAI (gpt-4o-mini)</option>
-          </select>
-        </div>
-        <div>
-          <label for="llmKeyInput" class="block text-[11px] font-bold text-slate-400 uppercase mb-1">API Key</label>
-          <input id="llmKeyInput" type="password" placeholder="Paste AIza... (Gemini) or sk-... (OpenAI)" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white mono" />
-        </div>
-        <div class="flex justify-end gap-2 pt-2">
-          <button type="button" aria-label="Close LLM dialog" onclick="closeLLMModal()" class="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 font-semibold">Cancel</button>
-          <button type="button" aria-label="Save LLM configuration" onclick="saveLLMConfig()" class="px-4 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold">
-            Save &amp; Re-Run Triage
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===================================================================== -->
   <!-- MODAL 4: DEPTH=1 vs DEPTH=4 SIDE-BY-SIDE COMPARISON                   -->
   <!-- ===================================================================== -->
   <div id="depthCompareModal" role="dialog" aria-modal="true" aria-labelledby="depthCompareModalTitle" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1169,10 +1132,12 @@
       document.getElementById('dbPortInput').value = fdb.port || 6379;
       document.getElementById('dbUserInput').value = fdb.username || 'falkordb';
 
-      if (healthRes.llm && healthRes.llm.configured) {
-        document.getElementById('llmBtnLabel').textContent = `LLM: ${String(healthRes.llm.provider || '').toUpperCase()} (configured)`;
-      } else {
-        document.getElementById('llmBtnLabel').textContent = 'LLM Key (Auto/Deterministic)';
+      const llmBadge = document.getElementById('llmStatusBadge');
+      if (llmBadge) {
+        const llm = healthRes.llm || {};
+        llmBadge.textContent = llm.configured
+          ? `LLM: ${String(llm.provider || '').toUpperCase()} (backend)`
+          : 'LLM: deterministic (backend)';
       }
       setGlobalNotice('', 'info');
       return { healthRes, graphRes };
@@ -2021,41 +1986,8 @@
     }
 
     // =====================================================================
-    // LLM CONFIG MODAL & DEPTH COMPARE MODAL
+    // Depth comparison modal
     // =====================================================================
-    function openLLMModal() {
-      document.getElementById('llmModal').classList.remove('hidden');
-    }
-    function closeLLMModal() {
-      document.getElementById('llmModal').classList.add('hidden');
-    }
-    async function saveLLMConfig() {
-      const provider = document.getElementById('llmProviderSelect').value;
-      const apiKeyInput = document.getElementById('llmKeyInput');
-      const apiKey = apiKeyInput.value.trim();
-      try {
-        await fetchJson('/api/config/llm', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ provider, api_key: apiKey })
-        });
-        apiKeyInput.value = '';
-        closeLLMModal();
-        setGlobalNotice('LLM configuration updated. Re-running with the grounded response guardrail.', 'success');
-        await loadHealthAndGraph();
-        await executeTriageCall({
-          tenant_id: currentTenant,
-          service: currentService,
-          ticket_id: currentTicketId,
-          depth: currentDepth,
-          bypass_memory: true
-        });
-      } catch (error) {
-        apiKeyInput.value = '';
-        handleUiError(error, 'LLM configuration failed');
-      }
-    }
-
     async function openDepthCompareModal() {
       document.getElementById('depthCompareModal').classList.remove('hidden');
       const body = document.getElementById('depthCompareBody');
@@ -2120,7 +2052,6 @@
       const closers = {
         benchmarkModal: closeBenchmarkModal,
         chaosModal: closeChaosModal,
-        llmModal: closeLLMModal,
         depthCompareModal: () => document.getElementById('depthCompareModal').classList.add('hidden'),
         cloudModal: () => document.getElementById('cloudModal').classList.add('hidden'),
         adminModal: closeAdminModal

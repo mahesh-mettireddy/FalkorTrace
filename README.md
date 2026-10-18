@@ -204,7 +204,10 @@ Open **http://localhost:8000**.
 For a strict submission-style run, configure `FALKORTRACE_STRICT_DB=1`,
 `FALKORTRACE_ADMIN_TOKEN`, and `FALKORTRACE_CORS_ORIGINS` in `.env`. The
 dashboard keeps the admin token in memory only and sends it only to protected
-routes.
+routes. If live LLM prose is enabled, configure `GEMINI_API_KEY` or
+`OPENAI_API_KEY` in the backend environment, plus optional
+`FALKORTRACE_LLM_PROVIDER` and `FALKORTRACE_LLM_MODEL`. LLM credentials are
+never entered or stored in the browser.
 
 ### 2. Docker Compose (Pinned `falkordb/falkordb:v4.2.0` + FalkorTrace App)
 ```bash
@@ -250,7 +253,6 @@ When `FALKORTRACE_ADMIN_TOKEN` is non-empty, the following routes require either
 `X-FalkorTrace-Admin-Token: <token>` or `Authorization: Bearer <token>`:
 
 ```text
-/api/config/llm
 /api/config/falkordb
 /api/benchmark
 /api/remediate
@@ -260,6 +262,7 @@ When `FALKORTRACE_ADMIN_TOKEN` is non-empty, the following routes require either
 /api/mcp/call
 ```
 
-The health endpoint never returns API-key previews or database passwords. Public
-deployments should also set `FALKORTRACE_STRICT_DB=1` and an explicit
-`FALKORTRACE_CORS_ORIGINS` allowlist.
+The health endpoint never returns API-key previews or database passwords. LLM
+credentials are backend-environment-only; the dashboard displays provider status
+without exposing or accepting a key. Public deployments should also set
+`FALKORTRACE_STRICT_DB=1` and an explicit `FALKORTRACE_CORS_ORIGINS` allowlist.

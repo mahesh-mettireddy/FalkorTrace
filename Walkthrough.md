@@ -49,6 +49,10 @@ FALKORTRACE_CORS_ORIGINS=http://localhost:8000
 
 The admin token is needed only for protected actions such as benchmark execution, reset, memory clear, rollback, fault injection, and runtime configuration. The dashboard keeps it in memory for the current tab only.
 
+If live LLM prose is enabled, set `GEMINI_API_KEY` or `OPENAI_API_KEY` in the
+backend environment before starting the server. The dashboard intentionally has
+no API-key input; it only reports whether the backend has a configured provider.
+
 ## 0:00–0:30 — Establish the problem
 
 Say:

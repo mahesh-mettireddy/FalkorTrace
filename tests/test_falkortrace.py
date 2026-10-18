@@ -424,7 +424,7 @@ def test_four_system_12_case_benchmark_and_live_fault_injection() -> None:
     client.post("/api/seed", json={"tenant_id": "killbill-prod"})
 
 
-def test_admin_token_guard_and_secret_redaction(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_admin_token_guard_and_backend_llm_secret_redaction(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FALKORTRACE_ADMIN_TOKEN", "test-admin-token")
 
     denied = client.post("/api/memory/clear", json={"tenant_id": "killbill-prod"})
@@ -438,21 +438,25 @@ def test_admin_token_guard_and_secret_redaction(monkeypatch: pytest.MonkeyPatch)
     assert allowed.status_code == 200
 
     secret = "sk-test-secret-that-must-not-leak"
-    llm = client.post(
-        "/api/config/llm",
-        json={"provider": "openai", "api_key": secret, "model": "test-model"},
-        headers={"Authorization": "Bearer test-admin-token"},
-    )
-    assert llm.status_code == 200
-    assert secret not in llm.text
-    assert "key_preview" not in llm.json()["llm"]
+    monkeypatch.setenv("OPENAI_API_KEY", secret)
+    monkeypatch.setenv("FALKORTRACE_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("FALKORTRACE_LLM_MODEL", "test-model")
+    health = client.get("/api/health")
+    assert health.status_code == 200
+    assert secret not in health.text
+    assert health.json()["llm"] == {
+        "configured": True,
+        "provider": "openai",
+        "model": "test-model",
+        "configuration_source": "backend_environment",
+    }
 
-    # Do not leave a test key in process-local runtime state for later tests.
-    client.post(
+    # Browser clients have no endpoint through which they can submit an LLM key.
+    assert client.post(
         "/api/config/llm",
-        json={"provider": "auto", "api_key": "", "model": ""},
+        json={"provider": "openai", "api_key": secret},
         headers={"X-FalkorTrace-Admin-Token": "test-admin-token"},
-    )
+    ).status_code == 404
 
 
 def test_production_admin_routes_fail_closed_without_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
