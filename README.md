@@ -266,3 +266,40 @@ The health endpoint never returns API-key previews or database passwords. LLM
 credentials are backend-environment-only; the dashboard displays provider status
 without exposing or accepting a key. Public deployments should also set
 `FALKORTRACE_STRICT_DB=1` and an explicit `FALKORTRACE_CORS_ORIGINS` allowlist.
+
+---
+
+## WeMakeDevs × FalkorDB "Graph Hacks" Submission Details
+
+### 1. Tracks Entered (All 3 Tracks)
+- **Track 01 — Agents That Act on Connected Data:** Multi-hop causal reasoning (`*0..4`), graph queries and GraphBLAS algorithms exposed as **12 Model Context Protocol (MCP) tools**, sandboxed code verification (`run_approved_check`), and closed-loop artifact rollback (`/api/remediate`).
+- **Track 02 — Agent Memory and Coordination:** Persistent episodic (`:Finding`), empirical (`:Observation`), semantic (`:Requirement`), and procedural (`:Runbook`) memory stored directly in FalkorDB, gated by a **Minimum Applicability Fingerprint** `(tenant_id, service, input_fingerprint, artifact_sha, req_version, check_version)` with isolated multigraphs per tenant (`falkortrace:killbill-prod`, `falkortrace:nexus-commerce`).
+- **Track 03 — Company Brain:** Connects tickets (`:Client_Issue`), microservices (`:Service`), source files (`:Code_Module`), Git commits (`:Change`), PRD/SRD requirements (`:Requirement`), engineering teams (`:Team`), and on-call engineers (`:Person`) in a single traversable company knowledge graph.
+
+### 2. Core Cypher Queries & GraphBLAS Algorithms Used
+All production queries run against FalkorDB (`backend/tools.py`) using parameterized Cypher:
+- **Multi-Hop Causal Blast-Radius Traversal (`trace_blast_radius`):**
+  ```cypher
+  MATCH path = (start:Service {name: $service})-[:ROUTES_TO*0..4]->(s:Service)
+  OPTIONAL MATCH (s)-[:CONTAINS_CODE]->(c:Code_Module)
+  OPTIONAL MATCH (c)-[gov:GOVERNED_BY]->(r:Requirement)
+  OPTIONAL MATCH (c)-[:MODIFIED_BY]->(ch:Change)
+  RETURN s.name AS service, length(path) AS hop_distance,
+         c.name AS code_module, r.id AS req_id, gov.compliant AS compliant,
+         ch.sha AS patch_sha, ch.summary AS patch_summary
+  ORDER BY hop_distance ASC
+  ```
+- **Version-Aware Episodic Memory Lookup & Selective Invalidation (`evaluate_memory_applicability` / `remediate_regression`):**
+  ```cypher
+  MATCH (f:Finding)-[:ABOUT]->(s:Service {name: $service})
+  OPTIONAL MATCH (f)-[:EVIDENCED_BY]->(obs:Observation)
+  RETURN f, obs ORDER BY f.at DESC LIMIT 5
+  ```
+- **GraphBLAS Algorithms (`service_criticality_pagerank`, `shortest_dependency_path`, `analyze_topology_islands`):**
+  - `CALL algo.pageRank('Service', 'ROUTES_TO')` — Ranks architectural blast-radius criticality across microservices.
+  - `CALL algo.SPpaths({sourceNode: a, destNode: b, relTypes: ['ROUTES_TO']})` — Computes shortest causal dependency chains.
+  - `CALL algo.WCC('Service', 'ROUTES_TO')` — Detects unmodeled or isolated topology islands.
+
+### 3. AI Coding Assistant Disclosure
+In compliance with Rule #11 of the WeMakeDevs Graph Hacks rules: AI coding assistants (Antigravity / Gemini) were used during the hackathon window to assist with boilerplate scaffolding, UI layout refinement, and test authoring, with all graph schema design, Cypher query logic, sandboxed verification architecture, and live FalkorDB Cloud verification directed and validated by the participant.
+
