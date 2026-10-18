@@ -12,7 +12,7 @@ Includes:
   and `(:Code_Module)-[:ACTIVE_VERSION]->(:ArtifactVersion)`.
 - Multi-case tickets on the same service (e.g., `TICKET-4902`, `TICKET-4905`, `TICKET-4906` on `billing-edge-api`;
   `TICKET-4908`, `TICKET-4909` on `invoice-orchestrator`; `TICKET-4915`, `TICKET-4916` on `payment-gateway-router`)
-  to prove version-aware memory applicability and held-out evaluation.
+  to prove version-aware memory applicability and frozen evaluation.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List
 
+from backend.db import GraphOperationError
 from backend.verifier import ARTIFACT_VERSIONS_CATALOG, INDEPENDENT_REQUIREMENT_SPECIFICATIONS
 
 ALLOWED_TENANTS = {"killbill-prod", "nexus-commerce"}
@@ -61,7 +62,7 @@ def get_tenant_dataset(tenant_id: str) -> Dict[str, Any]:
 
 
 def _build_killbill_prod_dataset() -> Dict[str, Any]:
-    """Rich Kill Bill Enterprise SaaS Billing dataset covering live demo and held-out evaluation cases."""
+    """Rich Kill Bill Enterprise SaaS Billing dataset covering live demo and frozen evaluation cases."""
     services = [
         {
             "name": "billing-edge-api",
@@ -560,7 +561,7 @@ def _build_killbill_prod_dataset() -> Dict[str, Any]:
             "actual_behavior": "Service exists in FalkorDB, but has zero modeled dependency or code paths (Disconnected WCC Island).",
             "created_at": "2026-10-16T01:10:00Z",
         },
-        # --- Additional Held-Out & Same-Service Different-Case Tickets (Judge Sections 05 & 07) ---
+        # --- Additional boundary and same-service different-case tickets ---
         {
             "id": "TICKET-4905",
             "title": "Final-day (Day 29 of 30) upgrade overcharged $6.00 instead of $2.00 boundary proration",
@@ -836,8 +837,8 @@ def seed_tenant(db: Any, tenant_id: str = "killbill-prod") -> Dict[str, Any]:
 
     try:
         graph.query("MATCH (n) DETACH DELETE n")
-    except Exception:
-        pass
+    except Exception as exc:
+        raise GraphOperationError("seed_tenant.clear_graph") from exc
 
     index_queries = [
         "CREATE INDEX FOR (s:Service) ON (s.name)",
@@ -937,7 +938,9 @@ def seed_tenant(db: Any, tenant_id: str = "killbill-prod") -> Dict[str, Any]:
                     description: $description
                 })
                 CREATE (c)-[:VERIFIED_BY]->(chk)
+                CREATE (chk)-[:TARGETS]->(c)
                 CREATE (r)-[:CHECKED_BY]->(chk)
+                CREATE (chk)-[:VERIFIES]->(r)
                 """,
                 chk,
             )
@@ -955,6 +958,7 @@ def seed_tenant(db: Any, tenant_id: str = "killbill-prod") -> Dict[str, Any]:
                     code_hash: $code_hash
                 })
                 CREATE (c)-[:HAS_VERSION]->(av)
+                CREATE (c)-[:HAS_ARTIFACT]->(av)
                 """,
                 av,
             )

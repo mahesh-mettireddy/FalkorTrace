@@ -28,8 +28,16 @@ services:
       - FALKORDB_USERNAME=${FALKORDB_USERNAME:-}
       - FALKORDB_PASSWORD=${FALKORDB_PASSWORD:-}
       - FALKORDB_SSL=${FALKORDB_SSL:-false}
+      - FALKORTRACE_STRICT_DB=${FALKORTRACE_STRICT_DB:-1}
+      - FALKORTRACE_ADMIN_TOKEN=${FALKORTRACE_ADMIN_TOKEN:-}
+      - FALKORTRACE_CORS_ORIGINS=${FALKORTRACE_CORS_ORIGINS:-http://localhost:8000}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
     depends_on:
       falkordb:
         condition: service_healthy

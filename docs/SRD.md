@@ -38,7 +38,7 @@
 - Implements 12 deterministic tools (`resolve_service`, `recall_past_findings`, `evaluate_memory_applicability`, `inspect_ticket_and_prd_lineage`, `trace_blast_radius`, `inspect_recent_patches`, `list_relevant_checks`, `run_approved_check`, `shortest_dependency_path`, `service_criticality_pagerank`, `analyze_topology_islands_and_bridges`, `record_finding`) plus simulated remediation and chaos fault actions.
 
 ### 2.5 Subsystem `SRD-AGENT-05`: Dynamic Graph-Guided Orchestrator & Entity-Reference Guardrail (`backend/agent.py`)
-- Implements dynamic evidence-driven tool selection, version-aware memory gating, and the 12-case 4-System Ablation Benchmark (`run_head_to_head_benchmark`).
+- Implements dynamic evidence-driven tool selection, version-aware memory gating, and the 12-case 4-System Benchmark (`run_head_to_head_benchmark`).
 - Enforces `accepts(sentence, answer)` post-generation entity-reference verification (ensuring no ungrounded service or code module names appear in prose, while behavioral truth is established by the sandboxed `Observation`).
 
 ### 2.6 Subsystem `SRD-MCP-06`: Model Context Protocol (MCP) Server (`backend/mcp_server.py`)

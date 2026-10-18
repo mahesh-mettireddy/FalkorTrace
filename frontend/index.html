@@ -58,9 +58,67 @@
       background: linear-gradient(135deg, rgba(16, 185, 129, 0.18), rgba(6, 182, 212, 0.08)) !important;
       box-shadow: 0 0 16px -4px rgba(16, 185, 129, 0.35);
     }
+    .track-card {
+      position: relative;
+      overflow: hidden;
+    }
+    .track-card::after {
+      content: '';
+      position: absolute;
+      inset: auto -25% -65% 35%;
+      height: 120px;
+      background: radial-gradient(circle, rgba(16, 185, 129, 0.15), transparent 68%);
+      pointer-events: none;
+    }
+    .track-card[data-track="02"]::after {
+      background: radial-gradient(circle, rgba(45, 212, 191, 0.16), transparent 68%);
+    }
+    .track-card[data-track="03"]::after {
+      background: radial-gradient(circle, rgba(34, 211, 238, 0.16), transparent 68%);
+    }
+    .status-live {
+      color: #6ee7b7;
+      border-color: rgba(16, 185, 129, 0.45);
+      background: rgba(16, 185, 129, 0.12);
+    }
+    .status-fallback {
+      color: #fbbf24;
+      border-color: rgba(245, 158, 11, 0.5);
+      background: rgba(245, 158, 11, 0.12);
+    }
+    .status-offline {
+      color: #fda4af;
+      border-color: rgba(244, 63, 94, 0.5);
+      background: rgba(244, 63, 94, 0.12);
+    }
+    .focus-ring:focus-visible,
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible {
+      outline: 2px solid #67e8f9;
+      outline-offset: 2px;
+    }
+    [aria-busy="true"] {
+      cursor: progress;
+    }
+    .skeleton {
+      background: linear-gradient(90deg, rgba(30, 41, 59, 0.75), rgba(51, 65, 85, 0.9), rgba(30, 41, 59, 0.75));
+      background-size: 200% 100%;
+      animation: skeletonShimmer 1.4s ease-in-out infinite;
+    }
+    @keyframes skeletonShimmer {
+      to { background-position: -200% 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+      }
+    }
   </style>
 </head>
-<body class="min-h-screen lg:h-screen flex flex-col select-none bg-[#060913] text-slate-100">
+<body class="min-h-screen lg:h-screen flex flex-col bg-[#060913] text-slate-100">
 
   <!-- ===================================================================== -->
   <!-- 1. EXECUTIVE SCOREBOARD & THESIS HEADER                               -->
@@ -76,17 +134,17 @@
           <div class="flex items-center gap-2">
             <h1 class="font-extrabold text-sm md:text-base tracking-tight text-white">FalkorTrace</h1>
             <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-              Graph-Guided Verification Agent
+              Graph-native incident proof
             </span>
           </div>
           <p class="text-[11px] text-slate-400">
-            <span class="text-rose-400 font-semibold">Lexical TF-IDF Baseline (k=3)</span> vs. <span class="text-emerald-400 font-semibold">FalkorDB Graph + Sandboxed Verifier + Version-Aware Memory</span>
+            Turn a customer symptom into a connected evidence path, a version-safe memory decision, and a routed action.
           </p>
         </div>
       </div>
 
       <!-- Live Reliability Scoreboard Pills -->
-      <div class="hidden xl:flex items-center gap-2 bg-slate-950/90 border border-slate-800 rounded-xl px-3 py-1.5">
+      <div class="hidden xl:flex items-center gap-2 bg-slate-950/90 border border-slate-800 rounded-xl px-3 py-1.5" aria-label="Live demo scoreboard">
         <div class="flex items-center gap-1.5 pr-2.5 border-r border-slate-800">
           <span class="w-2 h-2 rounded-full bg-rose-500"></span>
           <span class="text-[10px] text-slate-400">TF-IDF Baseline:</span>
@@ -95,7 +153,7 @@
         <div class="flex items-center gap-1.5 pr-2.5 border-r border-slate-800">
           <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
           <span class="text-[10px] text-slate-400">Sandbox Verifier:</span>
-          <span id="scoreGraphAcc" class="text-[11px] font-bold text-emerald-400 mono">12/12 Held-Out Cases</span>
+          <span id="scoreGraphAcc" class="text-[11px] font-bold text-emerald-400 mono">-- Frozen Cases</span>
         </div>
         <div class="flex items-center gap-1.5 pr-2.5 border-r border-slate-800">
           <span class="text-[10px] text-slate-400">Entity Guard:</span>
@@ -103,7 +161,7 @@
         </div>
         <div class="flex items-center gap-1.5">
           <span id="dbPulseDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span id="dbStatusBadge" class="text-[11px] font-bold text-emerald-300 mono">FalkorDB: -- ms</span>
+          <span id="dbStatusBadge" class="text-[11px] font-bold text-emerald-300 mono" role="status" aria-live="polite">Engine: --</span>
         </div>
       </div>
 
@@ -112,48 +170,123 @@
         <!-- Multigraph Tenant Selector -->
         <div class="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-lg px-2.5 py-1">
           <span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Tenant:</span>
-          <select id="tenantSelect" onchange="switchTenant(this.value)" class="bg-transparent text-xs font-semibold text-emerald-300 focus:outline-none cursor-pointer mono">
+          <select id="tenantSelect" aria-label="Tenant graph" onchange="switchTenant(this.value)" class="bg-transparent text-xs font-semibold text-emerald-300 focus:outline-none cursor-pointer mono">
             <option value="killbill-prod" class="bg-slate-900 text-white">falkortrace:killbill-prod (SaaS Billing)</option>
             <option value="nexus-commerce" class="bg-slate-900 text-white">falkortrace:nexus-commerce (Marketplace)</option>
           </select>
         </div>
 
-        <!-- Run 12-Case Held-Out Evaluation Suite Button -->
-        <button onclick="openBenchmarkModal()" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs shadow-md shadow-emerald-500/20 flex items-center gap-1.5 transition">
+        <!-- Run 12-Case Frozen Evaluation Suite Button -->
+        <button type="button" onclick="openBenchmarkModal()" aria-label="Open 12-case benchmark" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs shadow-md shadow-emerald-500/20 flex items-center gap-1.5 transition">
           <span>📊</span>
           <span>Run 12-Case Benchmark (A/B/C/D)</span>
         </button>
 
         <!-- Inject Simulated Chaos Fault Button -->
-        <button onclick="openChaosModal()" class="px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-300 font-semibold text-xs flex items-center gap-1 transition" title="Simulate deploying a faulty ArtifactVersion into FalkorDB to prove version-aware memory invalidation and live check execution">
+        <button type="button" onclick="openChaosModal()" aria-label="Open protected fault simulation controls" class="px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-300 font-semibold text-xs flex items-center gap-1 transition" title="Create a faulty ArtifactVersion in the controlled demo graph to prove version-aware memory invalidation and verification">
           <span>💥</span>
           <span class="hidden sm:inline">Simulate Fault</span>
         </button>
 
         <!-- Configure Live LLM API Key (Gemini / OpenAI) -->
-        <button onclick="openLLMModal()" id="llmStatusBtn" class="px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition">
+        <button type="button" onclick="openLLMModal()" aria-label="Open LLM configuration" id="llmStatusBtn" class="px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition">
           <span>🔑</span>
           <span id="llmBtnLabel">LLM Key (Auto/Deterministic)</span>
         </button>
 
         <!-- FalkorDB Cloud Connection Modal -->
-        <button onclick="openCloudModal()" class="px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs mono transition" title="Inspect engine mode or switch FalkorDB instance">
+        <button type="button" onclick="openAdminModal()" class="px-2 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-200 text-xs mono transition" title="Set an optional in-memory admin token for protected routes" aria-label="Open admin token controls">
+          🔐 Admin
+        </button>
+        <button type="button" onclick="openCloudModal()" class="px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs mono transition" title="Inspect engine mode or switch FalkorDB instance" aria-label="Open FalkorDB connection controls">
           ⚙️ DB
         </button>
       </div>
     </div>
   </header>
 
+  <!-- Presentation hero: the judge sees the thesis and runtime state immediately. -->
+  <section class="border-b border-slate-800/80 bg-gradient-to-r from-[#0b1725] via-[#0a111f] to-[#11132a] px-4 py-4 shrink-0" aria-labelledby="heroTitle">
+    <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+      <div class="max-w-3xl">
+        <div class="flex items-center gap-2 mb-1.5">
+          <span class="text-[10px] uppercase tracking-[0.22em] font-bold text-emerald-300">Hackathon demo cockpit</span>
+          <span class="h-px w-10 bg-emerald-500/50"></span>
+          <span id="heroStateBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-full status-fallback mono" role="status" aria-live="polite">INITIALIZING</span>
+        </div>
+        <h2 id="heroTitle" class="text-xl md:text-2xl font-extrabold tracking-tight text-white">From connected evidence to a safe action in one trace.</h2>
+        <p class="text-xs md:text-sm text-slate-300 mt-1.5 leading-relaxed">FalkorTrace follows the incident through the company graph, proves the active code against its contract, and only reuses memory when the input and versions still match.</p>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 min-w-0 xl:min-w-[520px]" aria-label="Runtime health">
+        <div class="rounded-xl border border-slate-700/80 bg-slate-950/60 px-3 py-2">
+          <div class="text-[9px] uppercase tracking-wider text-slate-500">Engine</div>
+          <div id="engineModeBadge" class="mt-1 text-[11px] font-extrabold px-2 py-1 rounded-lg status-fallback mono truncate">--</div>
+        </div>
+        <div class="rounded-xl border border-slate-700/80 bg-slate-950/60 px-3 py-2">
+          <div class="text-[9px] uppercase tracking-wider text-slate-500">Database policy</div>
+          <div id="strictModeBadge" class="mt-1 text-[11px] font-extrabold px-2 py-1 rounded-lg bg-slate-800 text-slate-300 mono truncate">STRICT MODE: --</div>
+        </div>
+        <div class="rounded-xl border border-slate-700/80 bg-slate-950/60 px-3 py-2">
+          <div class="text-[9px] uppercase tracking-wider text-slate-500">Graph scope</div>
+          <div id="heroGraphScope" class="mt-1 text-[11px] font-extrabold text-cyan-200 mono truncate">falkortrace:--</div>
+        </div>
+        <div class="rounded-xl border border-slate-700/80 bg-slate-950/60 px-3 py-2">
+          <div class="text-[9px] uppercase tracking-wider text-slate-500">Latency</div>
+          <div id="heroLatency" class="mt-1 text-[11px] font-extrabold text-emerald-300 mono">-- ms</div>
+        </div>
+      </div>
+    </div>
+    <div id="degradedNotice" class="hidden mt-3 rounded-lg border border-amber-500/40 bg-amber-950/25 px-3 py-2 text-[11px] text-amber-100" role="alert"></div>
+    <div id="globalNotice" class="hidden mt-3 rounded-lg border px-3 py-2 text-[11px]" role="status" aria-live="polite"></div>
+  </section>
+
+  <!-- The three-track narrative is intentionally visible before the detailed workspace. -->
+  <section class="border-b border-slate-800/80 bg-[#080d18] px-4 py-3 shrink-0" aria-label="FalkorTrace three-track story">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+      <article class="track-card rounded-xl border border-emerald-500/35 bg-emerald-950/15 px-3 py-2.5" data-track="01">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-[10px] font-extrabold tracking-[0.18em] text-emerald-300">TRACK 01</span>
+          <span id="track01State" class="text-[10px] text-slate-400 mono">Awaiting path</span>
+        </div>
+        <h3 class="text-sm font-extrabold text-white mt-1">Connected-data action</h3>
+        <p class="text-[11px] text-slate-400 mt-0.5">Resolve the real entity, traverse dependencies, select the approved check, and show the live Cypher / algorithm trace.</p>
+      </article>
+      <article class="track-card rounded-xl border border-teal-500/35 bg-teal-950/15 px-3 py-2.5" data-track="02">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-[10px] font-extrabold tracking-[0.18em] text-teal-300">TRACK 02</span>
+          <span id="track02State" class="text-[10px] text-slate-400 mono">Memory gate idle</span>
+        </div>
+        <h3 class="text-sm font-extrabold text-white mt-1">Version-aware memory / coordination</h3>
+        <p class="text-[11px] text-slate-400 mt-0.5">Reuse only an applicable observation; reject different inputs or stale artifact versions instead of guessing from cache.</p>
+      </article>
+      <article class="track-card rounded-xl border border-cyan-500/35 bg-cyan-950/15 px-3 py-2.5" data-track="03">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-[10px] font-extrabold tracking-[0.18em] text-cyan-300">TRACK 03</span>
+          <span id="track03State" class="text-[10px] text-slate-400 mono">Owner route idle</span>
+        </div>
+        <h3 class="text-sm font-extrabold text-white mt-1">Company brain / provenance</h3>
+        <p class="text-[11px] text-slate-400 mt-0.5">Tie requirement, artifact, observation, owner, and next action into a durable evidence packet the team can trust.</p>
+      </article>
+    </div>
+  </section>
+
   <!-- ===================================================================== -->
   <!-- 2. SCENARIO SELECTOR & LIVE NATURAL-LANGUAGE QUERY STRIP              -->
   <!-- ===================================================================== -->
-  <section class="border-b border-slate-800/80 bg-[#0b1120] px-4 py-2 shrink-0">
+  <section id="scenarioControls" class="border-b border-slate-800/80 bg-[#0b1120] px-4 py-2.5 shrink-0" aria-label="Demo scenario controls">
+    <div class="flex items-center justify-between gap-2 mb-2">
+      <div>
+        <div class="text-[10px] uppercase tracking-[0.18em] font-extrabold text-slate-300">Demo controls</div>
+        <p class="text-[11px] text-slate-500">Choose the evidence story, then watch the graph, verifier, memory gate, and owner route update together.</p>
+      </div>
+      <span id="scenarioStatus" class="hidden sm:inline text-[10px] text-slate-400 mono" role="status" aria-live="polite">Case 1 • ready</span>
+    </div>
     <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
       <!-- 7 Interactive Comparison Scenarios -->
       <div class="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
         <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1 shrink-0">Select Case:</span>
 
-        <button id="scen-1" onclick="runScenario(1)" class="scenario-btn active shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
+        <button type="button" aria-pressed="true" id="scen-1" onclick="runScenario(1)" class="scenario-btn active shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
           <div class="flex items-center gap-1.5">
             <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 mono">1. 3-Hop Verifier</span>
             <span class="text-xs font-bold text-white">TICKET-4902</span>
@@ -161,7 +294,7 @@
           <div class="text-[10px] text-slate-400 mt-0.5">Runs <span class="mono text-amber-300">CHK-PRORATION</span> ($45 vs $30)</div>
         </button>
 
-        <button id="scen-2" onclick="runScenario(2)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
+        <button type="button" aria-pressed="false" id="scen-2" onclick="runScenario(2)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
           <div class="flex items-center gap-1.5">
             <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 mono">2. PRD Spec Check</span>
             <span class="text-xs font-bold text-white">TICKET-4908</span>
@@ -169,7 +302,7 @@
           <div class="text-[10px] text-slate-400 mt-0.5">Verifies 42 seats = 0% (<span class="mono text-emerald-300">PRD-DISC-209</span>)</div>
         </button>
 
-        <button id="scen-3" onclick="runScenario(3)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
+        <button type="button" aria-pressed="false" id="scen-3" onclick="runScenario(3)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
           <div class="flex items-center gap-1.5">
             <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 mono">3. Schema Check</span>
             <span class="text-xs font-bold text-white">TICKET-4915</span>
@@ -177,7 +310,7 @@
           <div class="text-[10px] text-slate-400 mt-0.5">Runs <span class="mono text-amber-300">CHK-WEBHOOK</span> on <span class="mono">USDT-ERC20</span></div>
         </button>
 
-        <button id="scen-4" onclick="runScenario(4)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
+        <button type="button" aria-pressed="false" id="scen-4" onclick="runScenario(4)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
           <div class="flex items-center gap-1.5">
             <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 mono">4. WCC Island</span>
             <span class="text-xs font-bold text-white">TICKET-4920</span>
@@ -185,15 +318,15 @@
           <div class="text-[10px] text-slate-400 mt-0.5"><span class="mono">algo.WCC</span> flags insufficient evidence</div>
         </button>
 
-        <button id="scen-5" onclick="runScenario(5)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
+        <button type="button" aria-pressed="false" id="scen-5" onclick="runScenario(5)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
           <div class="flex items-center gap-1.5">
             <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 mono">5. Unknown Entity</span>
             <span class="text-xs font-bold text-white">quantum-ledger-v9</span>
           </div>
-          <div class="text-[10px] text-slate-400 mt-0.5">Entity Gate abstains in <span class="mono">&lt;1ms</span></div>
+          <div class="text-[10px] text-slate-400 mt-0.5">Entity Gate abstains with <span class="mono">0 downstream queries</span></div>
         </button>
 
-        <button id="scen-6" onclick="runScenario(6)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
+        <button type="button" aria-pressed="false" id="scen-6" onclick="runScenario(6)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition">
           <div class="flex items-center gap-1.5">
             <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-teal-500/20 text-teal-300 mono">6. Memory Reuse</span>
             <span class="text-xs font-bold text-white">Same Case (4902)</span>
@@ -201,7 +334,7 @@
           <div class="text-[10px] text-slate-400 mt-0.5">Fingerprint match ➔ O(1) reuse</div>
         </button>
 
-        <button id="scen-7" onclick="runScenario(7)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition" title="Proves Version-Aware Memory Safety: same service (billing-edge-api) but different input (Day 29 boundary TICKET-4905) refuses blind reuse and runs check!">
+        <button type="button" aria-pressed="false" id="scen-7" onclick="runScenario(7)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/80 hover:bg-slate-800/80 transition" title="Proves Version-Aware Memory Safety: same service (billing-edge-api) but different input (Day 29 boundary TICKET-4905) refuses blind reuse and runs check!">
           <div class="flex items-center gap-1.5">
             <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 mono">7. Memory Guard</span>
             <span class="text-xs font-bold text-white">Diff Case (4905)</span>
@@ -215,15 +348,17 @@
         <!-- Depth Horizon Slider -->
         <div class="flex items-center gap-2 bg-slate-900 border border-slate-700/80 rounded-lg px-2.5 py-1" title="Variable-length Cypher traversal depth [:DEPENDS_ON*1..depth]">
           <span class="text-[10px] font-bold uppercase text-slate-400">Hops:</span>
-          <input id="depthSlider" type="range" min="1" max="4" value="4" oninput="onDepthChange(this.value)" class="w-16 accent-emerald-400 cursor-pointer" />
+          <label for="depthSlider" class="sr-only">Graph traversal depth in hops</label>
+           <input id="depthSlider" aria-label="Graph traversal depth in hops" type="range" min="1" max="4" value="4" oninput="onDepthChange(this.value)" class="w-16 accent-emerald-400 cursor-pointer" />
           <span id="depthValue" class="text-xs font-bold text-emerald-400 mono">4</span>
-          <button onclick="openDepthCompareModal()" class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/25 transition">
+          <button type="button" aria-label="Compare shallow and deep graph traversal" onclick="openDepthCompareModal()" class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/25 transition">
             1 vs 4
           </button>
         </div>
 
         <!-- Natural Language Input -->
-        <form onsubmit="submitCustomQuestion(event)" class="flex items-center gap-1.5">
+        <form onsubmit="submitCustomQuestion(event)" class="flex items-center gap-1.5" aria-label="Ask FalkorTrace a question">
+          <label for="askInput" class="sr-only">Ask a ticket or investigation question</label>
           <input
             id="askInput"
             type="text"
@@ -242,7 +377,7 @@
   <!-- 3. MAIN 3-COLUMN WORKSPACE:                                           -->
   <!--    LEFT: ❌ Vector-Only RAG | CENTER: 🧠 FalkorDB Core | RIGHT: ✅ Graph -->
   <!-- ===================================================================== -->
-  <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 overflow-y-auto lg:overflow-hidden">
+  <main id="workspaceShell" class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 overflow-y-auto lg:overflow-hidden" aria-busy="true">
 
     <!-- =================================================================== -->
     <!-- LEFT COLUMN (3 cols): ❌ LEXICAL TF-IDF BASELINE (k=3)              -->
@@ -252,7 +387,7 @@
       <div class="px-3.5 py-2.5 border-b border-rose-500/25 bg-gradient-to-r from-rose-950/50 via-slate-900 to-slate-900 flex items-center justify-between">
         <div>
           <div class="flex items-center gap-1.5">
-            <span class="text-xs font-extrabold uppercase tracking-wider text-rose-400">❌ 1. Lexical TF-IDF Baseline (k=3)</span>
+            <span class="text-xs font-extrabold uppercase tracking-wider text-rose-400">CONTROL · Text-only baseline (k=3)</span>
           </div>
           <p class="text-[11px] text-slate-400">Fair Serialized Fact Corpus (No Multi-Hop Graph Traversal)</p>
         </div>
@@ -285,8 +420,8 @@
             <span class="text-[11px] font-bold uppercase tracking-wider text-slate-300">Retrieved Top-3 Chunks (Fair Fact Corpus)</span>
             <span id="ragCorpusCount" class="text-[10px] text-slate-400 mono">Corpus: 18 chunks</span>
           </div>
-          <div id="ragChunksList" class="space-y-2">
-            <!-- Populated dynamically -->
+          <div id="ragChunksList" class="space-y-2" aria-live="polite">
+            <div class="rounded-lg border border-dashed border-slate-700 bg-slate-950/50 p-4 text-center text-[11px] text-slate-500 mono" role="status">Waiting for the first graph trace…</div>
           </div>
         </div>
 
@@ -328,13 +463,13 @@
 
         <!-- View Mode Tabs inside FalkorDB Core Unit -->
         <div class="flex items-center gap-1 bg-slate-950/90 p-1 rounded-lg border border-slate-800">
-          <button id="tabBtnSubgraph" onclick="switchCenterTab('subgraph')" class="px-2.5 py-1 rounded text-[11px] font-bold bg-emerald-500 text-slate-950 transition">
+          <button type="button" id="tabBtnSubgraph" aria-label="Show causal subgraph" onclick="switchCenterTab('subgraph')" class="px-2.5 py-1 rounded text-[11px] font-bold bg-emerald-500 text-slate-950 transition">
             🎯 Causal Subgraph
           </button>
-          <button id="tabBtnFullGraph" onclick="switchCenterTab('fullgraph')" class="px-2.5 py-1 rounded text-[11px] font-semibold text-slate-300 hover:text-white transition">
+          <button type="button" id="tabBtnFullGraph" aria-label="Show full graph" onclick="switchCenterTab('fullgraph')" class="px-2.5 py-1 rounded text-[11px] font-semibold text-slate-300 hover:text-white transition">
             🕸️ Full Graph (<span id="totalNodesCount">52</span>)
           </button>
-          <button id="tabBtnCypher" onclick="switchCenterTab('cypher')" class="px-2.5 py-1 rounded text-[11px] font-semibold text-slate-300 hover:text-white transition">
+          <button type="button" id="tabBtnCypher" aria-label="Show Cypher and algorithm trace" onclick="switchCenterTab('cypher')" class="px-2.5 py-1 rounded text-[11px] font-semibold text-slate-300 hover:text-white transition">
             💻 Cypher &amp; Checks (<span id="cypherCountBadge">0</span>)
           </button>
         </div>
@@ -348,13 +483,13 @@
 
         <!-- Live Graph Mutations (Simulated Rollback + Memory Controls) -->
         <div class="flex items-center gap-1.5 shrink-0">
-          <button id="rollbackBtn" onclick="triggerLiveRollback()" class="hidden px-2.5 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-emerald-300 text-[11px] font-bold mono transition" title="Simulation: Switches active artifact_sha to clean release, marks prior findings STALE_VERSION_MISMATCH, and re-runs sandbox check">
+          <button id="rollbackBtn" type="button" aria-label="Run protected artifact rollback" onclick="triggerLiveRollback()" class="hidden px-2.5 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-emerald-300 text-[11px] font-bold mono transition" title="Simulation: Switches active artifact_sha to clean release, marks prior findings STALE_VERSION_MISMATCH, and re-runs sandbox check">
             🛠️ Simulate Artifact Rollback (v4.12.1)
           </button>
-          <button onclick="clearEpisodicMemory()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[10px] mono transition" title="Delete (:Finding) and (:Observation) nodes from FalkorDB">
+          <button type="button" aria-label="Clear tenant episodic memory" onclick="clearEpisodicMemory()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[10px] mono transition" title="Delete (:Finding) and (:Observation) nodes from FalkorDB">
             🧹 Clear Memory
           </button>
-          <button onclick="resetTenantGraph()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[10px] mono transition" title="Re-seed default FalkorDB graph state">
+          <button type="button" aria-label="Reset tenant graph" onclick="resetTenantGraph()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[10px] mono transition" title="Re-seed default FalkorDB graph state">
             🔄 Reset Graph
           </button>
         </div>
@@ -379,7 +514,7 @@
 
         <!-- SVG Canvas Area -->
         <div class="flex-1 relative min-h-[300px] overflow-hidden">
-          <svg id="graphSvg" class="w-full h-full cursor-grab active:cursor-grabbing" viewBox="0 0 980 470" preserveAspectRatio="xMidYMid meet">
+          <svg id="graphSvg" class="w-full h-full cursor-grab active:cursor-grabbing" viewBox="0 0 980 470" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Interactive FalkorDB evidence graph">
             <defs>
               <marker id="arrow-default" viewBox="0 0 10 10" refX="22" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
                 <path d="M 0 1 L 10 5 L 0 9 z" fill="#334155" />
@@ -409,9 +544,9 @@
               <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-teal-300 inline-block"></span>Memory (:Finding)</span>
             </div>
             <div class="flex items-center gap-1 bg-slate-950/90 border border-slate-800 rounded-lg p-1 pointer-events-auto">
-              <button onclick="zoomGraph(1.2)" class="px-2 py-0.5 text-xs bg-slate-900 hover:bg-slate-800 rounded text-slate-200 font-bold">+</button>
-              <button onclick="zoomGraph(0.85)" class="px-2 py-0.5 text-xs bg-slate-900 hover:bg-slate-800 rounded text-slate-200 font-bold">−</button>
-              <button onclick="resetGraphZoom()" class="px-2 py-0.5 text-[10px] bg-slate-900 hover:bg-slate-800 rounded text-slate-300 mono">Fit</button>
+              <button type="button" aria-label="Zoom graph in" onclick="zoomGraph(1.2)" class="px-2 py-0.5 text-xs bg-slate-900 hover:bg-slate-800 rounded text-slate-200 font-bold">+</button>
+              <button type="button" aria-label="Zoom graph out" onclick="zoomGraph(0.85)" class="px-2 py-0.5 text-xs bg-slate-900 hover:bg-slate-800 rounded text-slate-200 font-bold">−</button>
+              <button type="button" aria-label="Fit graph to view" onclick="resetGraphZoom()" class="px-2 py-0.5 text-[10px] bg-slate-900 hover:bg-slate-800 rounded text-slate-300 mono">Fit</button>
             </div>
           </div>
 
@@ -419,7 +554,7 @@
           <div id="nodeInspectorCard" class="hidden absolute top-3 right-3 w-72 rounded-xl border border-emerald-500/40 bg-slate-950/95 p-3 shadow-2xl z-20">
             <div class="flex items-center justify-between mb-1.5">
               <span id="inspNodeType" class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 mono">Service</span>
-              <button onclick="document.getElementById('nodeInspectorCard').classList.add('hidden')" class="text-slate-400 hover:text-white text-xs">✕</button>
+              <button type="button" aria-label="Close graph node inspector" onclick="document.getElementById('nodeInspectorCard').classList.add('hidden')" class="text-slate-400 hover:text-white text-xs">✕</button>
             </div>
             <div id="inspNodeTitle" class="text-xs font-bold text-white mono mb-1">--</div>
             <pre id="inspNodeJson" class="text-[10px] text-slate-300 bg-slate-900/90 p-2 rounded border border-slate-800 overflow-x-auto max-h-40 mono"></pre>
@@ -434,8 +569,8 @@
             </span>
             <span id="swarmTotalSteps" class="text-[10px] text-emerald-400 font-semibold mono">Dynamic Steps</span>
           </div>
-          <div id="agentSwarmStrip" class="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
-            <!-- Populated dynamically -->
+          <div id="agentSwarmStrip" class="grid grid-cols-2 sm:grid-cols-5 gap-1.5" aria-live="polite">
+            <div class="col-span-full rounded-lg border border-dashed border-slate-700 bg-slate-950/50 p-3 text-center text-[11px] text-slate-500 mono" role="status">Waiting for agent handoffs…</div>
           </div>
         </div>
       </div>
@@ -452,7 +587,7 @@
             Every read query executes via <code class="mono text-emerald-300">graph.ro_query(cypher, params)</code> alongside native GraphBLAS algorithms (<code class="mono text-amber-300">algo.SPpaths</code>, <code class="mono text-amber-300">algo.pageRank</code>, <code class="mono text-amber-300">algo.WCC</code>) and deterministic sandbox checks (<code class="mono text-cyan-300">run_approved_check</code>).
           </p>
         </div>
-        <div id="cypherTraceList" class="space-y-2.5"></div>
+        <div id="cypherTraceList" class="space-y-2.5" aria-live="polite"><div class="rounded-lg border border-dashed border-slate-700 bg-slate-950/50 p-4 text-center text-[11px] text-slate-500 mono" role="status">Waiting for live Cypher and algorithm calls…</div></div>
       </div>
     </section>
 
@@ -464,9 +599,9 @@
       <div class="px-3.5 py-2.5 border-b border-emerald-500/25 bg-gradient-to-r from-emerald-950/50 via-slate-900 to-slate-900 flex items-center justify-between">
         <div>
           <div class="flex items-center gap-1.5">
-            <span class="text-xs font-extrabold uppercase tracking-wider text-emerald-400">✅ 3. FalkorDB + Sandbox Verifier</span>
+            <span class="text-xs font-extrabold uppercase tracking-wider text-emerald-400">TRACK 02 / 03 · Memory + company brain</span>
           </div>
-          <p class="text-[11px] text-slate-400">Executable Check + Version-Aware Memory</p>
+          <p class="text-[11px] text-slate-400">Executable proof → applicable memory → owner and next action</p>
         </div>
         <span id="graphOutcomePill" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 mono">
           answered_with_path
@@ -528,10 +663,10 @@
         </div>
 
         <!-- PageRank Blast Criticality + On-Call & Runbook Routing -->
-        <div class="rounded-lg border border-slate-800 bg-slate-950/90 p-3 space-y-2">
+        <div class="rounded-lg border border-cyan-500/25 bg-cyan-950/10 p-3 space-y-2">
           <div class="flex items-center justify-between">
             <span class="text-[10px] font-bold uppercase tracking-wider text-cyan-300">
-              PageRank Criticality &amp; Escalation
+              TRACK 03 · Ownership + action card
             </span>
             <span id="pagerankScoreBadge" class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 mono">
               PageRank: --
@@ -542,6 +677,17 @@
           </div>
           <div id="runbookStepsBox" class="text-[11px] bg-slate-900/90 border border-slate-800 rounded p-2 text-slate-300">
             --
+          </div>
+          <div id="safeActionCard" class="rounded-lg border border-amber-500/30 bg-amber-950/15 p-2.5 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-amber-200">Safe action</span>
+              <span id="actionSafetyBadge" class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 mono">READY</span>
+            </div>
+            <p id="recommendedActionText" class="text-[11px] text-slate-300 leading-relaxed">The next action will appear after evidence is assembled.</p>
+            <button id="safeActionBtn" type="button" onclick="triggerLiveRollback()" class="hidden w-full px-2.5 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-[11px] font-extrabold transition" aria-label="Run protected artifact rollback action">
+              🛠️ Run protected rollback + re-verify
+            </button>
+            <div id="actionTokenHint" class="text-[10px] text-slate-500 mono">Protected mutation route · token stays in memory only</div>
           </div>
         </div>
 
@@ -565,20 +711,20 @@
   </main>
 
   <!-- ===================================================================== -->
-  <!-- MODAL 1: 12-CASE 4-SYSTEM ABLATION BENCHMARK                          -->
+  <!-- MODAL 1: 12-CASE 4-SYSTEM FIXTURE BENCHMARK                           -->
   <!-- ===================================================================== -->
-  <div id="benchmarkModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+  <div id="benchmarkModal" role="dialog" aria-modal="true" aria-labelledby="benchmarkModalTitle" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
     <div class="w-full max-w-6xl rounded-2xl border border-emerald-500/40 bg-[#090e1c] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
       <div class="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-gradient-to-r from-emerald-950/60 to-slate-900">
         <div>
-          <h2 class="text-base font-extrabold text-white flex items-center gap-2">
-            <span>📊 12-Case 4-System Ablation Benchmark: Isolating Multi-Hop Graph, Sandbox Verifier &amp; Version-Aware Memory</span>
+          <h2 id="benchmarkModalTitle" class="text-base font-extrabold text-white flex items-center gap-2">
+            <span>📊 12-Case Fixture Benchmark: Graph, Verifier &amp; Version-Aware Memory</span>
           </h2>
           <p class="text-xs text-slate-400">
-            Live evaluation across 12 incident, held-out, same-service multi-case &amp; stale-artifact scenarios on <code id="bmEngineModeBadge" class="mono text-emerald-300">FalkorDB</code>
+            Reproducible repository-fixture benchmark across 12 incident, same-service multi-case &amp; stale-artifact scenarios on <code id="bmEngineModeBadge" class="mono text-emerald-300">FalkorDB</code>
           </p>
         </div>
-        <button onclick="closeBenchmarkModal()" class="text-slate-400 hover:text-white text-sm font-bold px-2 py-1">✕</button>
+        <button type="button" aria-label="Close benchmark dialog" onclick="closeBenchmarkModal()" class="text-slate-400 hover:text-white text-sm font-bold px-2 py-1">✕</button>
       </div>
 
       <div class="p-5 overflow-y-auto space-y-4">
@@ -587,28 +733,28 @@
           <div class="rounded-xl border border-rose-500/40 bg-rose-950/20 p-3">
             <div class="text-[11px] font-bold uppercase text-rose-400 mb-1">❌ System A: Lexical TF-IDF (k=3)</div>
             <div class="text-[10px] text-slate-400 mb-2">Fair Serialized Fact Corpus (No Graph, No Verifier)</div>
-            <div id="bmSysAAcc" class="text-lg font-extrabold text-rose-400 mono">0.0% (0/12)</div>
+            <div id="bmSysAAcc" class="text-lg font-extrabold text-rose-400 mono">--</div>
             <div class="text-[10px] text-slate-400 mt-1">Misses 2–3 hop causal chains &amp; lacks executable verification</div>
           </div>
 
           <div class="rounded-xl border border-amber-500/40 bg-amber-950/20 p-3">
             <div class="text-[11px] font-bold uppercase text-amber-300 mb-1">⚠️ System B: Local + Verifier (Depth=1)</div>
             <div class="text-[10px] text-slate-400 mb-2">Verifier Enabled, No Multi-Hop Graph Traversal</div>
-            <div id="bmSysBAcc" class="text-lg font-extrabold text-amber-300 mono">50.0% (6/12)</div>
+            <div id="bmSysBAcc" class="text-lg font-extrabold text-amber-300 mono">--</div>
             <div class="text-[10px] text-slate-400 mt-1">Verifies local 0/1-hop services, misses 2–3 hop regressions</div>
           </div>
 
           <div class="rounded-xl border border-cyan-500/40 bg-cyan-950/20 p-3">
             <div class="text-[11px] font-bold uppercase text-cyan-300 mb-1">🔹 System C: FalkorDB + Verifier (Stateless)</div>
             <div class="text-[10px] text-slate-400 mb-2">Multi-Hop Graph + Sandbox Check (Memory Disabled)</div>
-            <div id="bmSysCAcc" class="text-lg font-extrabold text-cyan-300 mono">100.0% (12/12)</div>
+            <div id="bmSysCAcc" class="text-lg font-extrabold text-cyan-300 mono">--</div>
             <div class="text-[10px] text-slate-400 mt-1">100% accuracy, but re-runs full traversal &amp; checks every time</div>
           </div>
 
           <div class="rounded-xl border border-emerald-500/50 bg-emerald-950/25 p-3">
             <div class="text-[11px] font-bold uppercase text-emerald-300 mb-1">✅ System D: FalkorDB + Verifier + Memory</div>
             <div class="text-[10px] text-slate-400 mb-2">Full Graph + Sandbox Check + Applicability Fingerprint</div>
-            <div id="bmSysDAcc" class="text-lg font-extrabold text-emerald-400 mono">100.0% (12/12)</div>
+            <div id="bmSysDAcc" class="text-lg font-extrabold text-emerald-400 mono">--</div>
             <div id="bmSysDNotes" class="text-[10px] text-emerald-200 mt-1">0% Stale Reuse | Avg Latency: <span id="bmGraphLat" class="mono font-bold">-- ms</span></div>
           </div>
         </div>
@@ -627,7 +773,7 @@
               </tr>
             </thead>
             <tbody id="benchmarkTableBody" class="divide-y divide-slate-800/80 bg-slate-950/60">
-              <tr><td colspan="6" class="p-4 text-center text-slate-400">Running 12-case 4-system ablation benchmark...</td></tr>
+              <tr><td colspan="6" class="p-4 text-center text-slate-400">Waiting for the 12-case fixture benchmark...</td></tr>
             </tbody>
           </table>
         </div>
@@ -636,36 +782,32 @@
   </div>
 
   <!-- ===================================================================== -->
-  <!-- MODAL 2: LIVE CHAOS FAULT INJECTOR                                    -->
+  <!-- MODAL 2: CONTROLLED CHAOS FAULT SIMULATION                            -->
   <!-- ===================================================================== -->
-  <div id="chaosModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+  <div id="chaosModal" role="dialog" aria-modal="true" aria-labelledby="chaosModalTitle" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
     <div class="w-full max-w-lg rounded-2xl border border-rose-500/40 bg-[#090e1c] shadow-2xl overflow-hidden">
       <div class="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-gradient-to-r from-rose-950/60 to-slate-900">
-        <h2 class="text-sm font-extrabold text-white">💥 Inject Live Chaos Fault into FalkorDB Cloud</h2>
-        <button onclick="closeChaosModal()" class="text-slate-400 hover:text-white text-sm font-bold">✕</button>
+        <h2 id="chaosModalTitle" class="text-sm font-extrabold text-white">💥 Run Controlled Chaos Fault Simulation</h2>
+        <button type="button" aria-label="Close fault injection dialog" onclick="closeChaosModal()" class="text-slate-400 hover:text-white text-sm font-bold">✕</button>
       </div>
       <div class="p-5 space-y-3 text-xs">
         <p class="text-slate-300 leading-relaxed">
-          Prove this is a <strong>live dynamic Graph Brain</strong> (not a static demo): inject a breaking Git commit (<code class="mono text-rose-300">compliant=false</code>) onto any downstream microservice in FalkorDB Cloud, then watch <strong>RAG + FalkorDB</strong> immediately catch it across hops while <strong>Vector-Only RAG</strong> remains blind!
+          Create a simulated breaking artifact (<code class="mono text-rose-300">compliant=false</code>) in the selected demo graph, then watch <strong>RAG + FalkorDB</strong> rediscover it across hops. This controlled action changes only the demo graph; it does not deploy code or modify GitHub, PagerDuty, or another external system.
         </p>
         <div>
-          <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Target Downstream Service</label>
+          <label for="chaosServiceSelect" class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Target Downstream Service</label>
           <select id="chaosServiceSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white mono">
             <option value="tax-ledger-adapter">tax-ledger-adapter (3 hops from billing-edge-api)</option>
-            <option value="subscription-service">subscription-service (1 hop from billing-edge-api)</option>
-            <option value="invoice-orchestrator">invoice-orchestrator (2 hops from billing-edge-api)</option>
-            <option value="proration-engine">proration-engine (3 hops from billing-edge-api)</option>
-            <option value="inventory-reservation-engine">inventory-reservation-engine (nexus-commerce 2 hops)</option>
           </select>
         </div>
         <div>
-          <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Faulty Commit Message</label>
+          <label for="chaosSummaryInput" class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Faulty Commit Message</label>
           <input id="chaosSummaryInput" type="text" value="feat(tax): bypass regional VAT rounding cache on multi-hop invoices" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white mono" />
         </div>
         <div class="flex justify-end gap-2 pt-2">
-          <button onclick="closeChaosModal()" class="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 font-semibold">Cancel</button>
-          <button onclick="executeChaosFault()" class="px-4 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-400 text-slate-950 font-bold">
-            💥 Inject Fault into FalkorDB &amp; Triage
+          <button type="button" aria-label="Close fault injection dialog" onclick="closeChaosModal()" class="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 font-semibold">Cancel</button>
+          <button type="button" aria-label="Run protected fault simulation" onclick="executeChaosFault()" class="px-4 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-400 text-slate-950 font-bold">
+            💥 Simulate Fault &amp; Triage
           </button>
         </div>
       </div>
@@ -675,18 +817,18 @@
   <!-- ===================================================================== -->
   <!-- MODAL 3: CONFIGURE LIVE LLM API KEY (GEMINI / OPENAI)                 -->
   <!-- ===================================================================== -->
-  <div id="llmModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+  <div id="llmModal" role="dialog" aria-modal="true" aria-labelledby="llmModalTitle" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
     <div class="w-full max-w-md rounded-2xl border border-cyan-500/40 bg-[#090e1c] shadow-2xl overflow-hidden">
       <div class="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-gradient-to-r from-cyan-950/60 to-slate-900">
-        <h2 class="text-sm font-extrabold text-white">🔑 Connect Live LLM (Gemini / OpenAI) + <code class="mono">accepts()</code> Gate</h2>
-        <button onclick="closeLLMModal()" class="text-slate-400 hover:text-white text-sm font-bold">✕</button>
+        <h2 id="llmModalTitle" class="text-sm font-extrabold text-white">🔑 Connect Live LLM (Gemini / OpenAI) + <code class="mono">accepts()</code> Gate</h2>
+        <button type="button" aria-label="Close LLM dialog" onclick="closeLLMModal()" class="text-slate-400 hover:text-white text-sm font-bold">✕</button>
       </div>
       <div class="p-5 space-y-3 text-xs">
         <p class="text-slate-300 leading-relaxed">
           Provide a <strong>Google Gemini</strong> (<code class="mono">AIza...</code>) or <strong>OpenAI</strong> (<code class="mono">sk-...</code>) API key to enable live LLM synthesis grounded strictly by FalkorDB's <code class="mono text-emerald-300">allowed_tokens</code> and verified post-generation by <code class="mono text-cyan-300">accepts(sentence, answer)</code>. Leave blank to use the zero-key Deterministic Graph Synthesizer.
         </p>
         <div>
-          <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Provider</label>
+          <label for="llmProviderSelect" class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Provider</label>
           <select id="llmProviderSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white">
             <option value="auto">Auto-Detect from Key (Gemini or OpenAI)</option>
             <option value="gemini">Google Gemini (gemini-2.0-flash)</option>
@@ -694,12 +836,12 @@
           </select>
         </div>
         <div>
-          <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">API Key</label>
+          <label for="llmKeyInput" class="block text-[11px] font-bold text-slate-400 uppercase mb-1">API Key</label>
           <input id="llmKeyInput" type="password" placeholder="Paste AIza... (Gemini) or sk-... (OpenAI)" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white mono" />
         </div>
         <div class="flex justify-end gap-2 pt-2">
-          <button onclick="closeLLMModal()" class="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 font-semibold">Cancel</button>
-          <button onclick="saveLLMConfig()" class="px-4 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold">
+          <button type="button" aria-label="Close LLM dialog" onclick="closeLLMModal()" class="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 font-semibold">Cancel</button>
+          <button type="button" aria-label="Save LLM configuration" onclick="saveLLMConfig()" class="px-4 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold">
             Save &amp; Re-Run Triage
           </button>
         </div>
@@ -710,11 +852,11 @@
   <!-- ===================================================================== -->
   <!-- MODAL 4: DEPTH=1 vs DEPTH=4 SIDE-BY-SIDE COMPARISON                   -->
   <!-- ===================================================================== -->
-  <div id="depthCompareModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+  <div id="depthCompareModal" role="dialog" aria-modal="true" aria-labelledby="depthCompareModalTitle" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
     <div class="w-full max-w-4xl rounded-2xl border border-cyan-500/40 bg-[#090e1c] shadow-2xl overflow-hidden">
       <div class="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-gradient-to-r from-cyan-950/60 to-slate-900">
-        <h2 class="text-sm font-extrabold text-white">⚡ Horizon Contrast: Shallow Traversal (Depth=1) vs. Multi-Hop Graph (Depth=4)</h2>
-        <button onclick="document.getElementById('depthCompareModal').classList.add('hidden')" class="text-slate-400 hover:text-white text-sm font-bold">✕</button>
+        <h2 id="depthCompareModalTitle" class="text-sm font-extrabold text-white">⚡ Horizon Contrast: Shallow Traversal (Depth=1) vs. Multi-Hop Graph (Depth=4)</h2>
+        <button type="button" aria-label="Close depth comparison dialog" onclick="document.getElementById('depthCompareModal').classList.add('hidden')" class="text-slate-400 hover:text-white text-sm font-bold">✕</button>
       </div>
       <div id="depthCompareBody" class="p-5 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
         <!-- Populated dynamically -->
@@ -723,37 +865,70 @@
   </div>
 
   <!-- ===================================================================== -->
+  <!-- MODAL: PROTECTED ACTION / ADMIN TOKEN                                  -->
+  <!-- ===================================================================== -->
+  <div id="adminModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="adminModalTitle">
+    <div class="w-full max-w-md rounded-2xl border border-cyan-500/40 bg-[#090e1c] shadow-2xl overflow-hidden" tabindex="-1">
+      <div class="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-gradient-to-r from-cyan-950/60 to-slate-900">
+        <div>
+          <h2 id="adminModalTitle" class="text-sm font-extrabold text-white">🔐 Protected action access</h2>
+          <p class="text-[10px] text-slate-400 mt-0.5">Used only for protected mutation routes in this browser tab.</p>
+        </div>
+        <button type="button" onclick="closeAdminModal()" class="text-slate-400 hover:text-white text-sm font-bold px-2 py-1" aria-label="Close admin token dialog">✕</button>
+      </div>
+      <div class="p-5 space-y-3 text-xs">
+        <div class="rounded-lg border border-cyan-500/25 bg-cyan-950/15 p-3 text-slate-300 leading-relaxed">
+          Benchmark, rollback, memory clear, graph reset, fault injection, and runtime configuration are protected by the backend when <code class="mono text-cyan-300">FALKORTRACE_ADMIN_TOKEN</code> is configured.
+        </div>
+        <div>
+          <label for="adminTokenInput" class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Admin token</label>
+          <input id="adminTokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="Paste token for this tab" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white mono" />
+        </div>
+        <p class="text-[10px] text-slate-500">The token is kept in JavaScript memory only. It is never written to local storage, cookies, or a URL.</p>
+        <div id="adminTokenState" class="text-[11px] text-slate-400" role="status" aria-live="polite">No token loaded.</div>
+        <div class="flex justify-between gap-2 pt-2">
+          <button type="button" onclick="clearAdminToken()" class="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 font-semibold">Clear</button>
+          <div class="flex gap-2">
+            <button type="button" onclick="closeAdminModal()" class="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 font-semibold">Cancel</button>
+            <button type="button" onclick="saveAdminToken()" class="px-4 py-1.5 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold">Use for protected actions</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
   <!-- MODAL 5: FALKORDB CLOUD INSTANCE CONNECTION                           -->
   <!-- ===================================================================== -->
-  <div id="cloudModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+  <div id="cloudModal" role="dialog" aria-modal="true" aria-labelledby="cloudModalTitle" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
     <div class="w-full max-w-md rounded-2xl border border-emerald-500/40 bg-[#090e1c] shadow-2xl overflow-hidden">
       <div class="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-gradient-to-r from-emerald-950/60 to-slate-900">
-        <h2 class="text-sm font-extrabold text-white">⚙️ FalkorDB Cloud Connection</h2>
-        <button onclick="document.getElementById('cloudModal').classList.add('hidden')" class="text-slate-400 hover:text-white text-sm font-bold">✕</button>
+        <h2 id="cloudModalTitle" class="text-sm font-extrabold text-white">⚙️ FalkorDB Cloud Connection</h2>
+        <button type="button" aria-label="Close FalkorDB connection dialog" onclick="document.getElementById('cloudModal').classList.add('hidden')" class="text-slate-400 hover:text-white text-sm font-bold">✕</button>
       </div>
       <div class="p-5 space-y-3 text-xs">
         <div id="cloudCurrentStatusBox" class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 mono text-[11px] text-emerald-300"></div>
         <div>
-          <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Host / Endpoint</label>
+          <label for="dbHostInput" class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Host / Endpoint</label>
           <input id="dbHostInput" type="text" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white mono" />
         </div>
         <div class="grid grid-cols-2 gap-2">
           <div>
-            <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Port</label>
+            <label for="dbPortInput" class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Port</label>
             <input id="dbPortInput" type="number" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white mono" />
           </div>
           <div>
-            <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Username</label>
+            <label for="dbUserInput" class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Username</label>
             <input id="dbUserInput" type="text" value="falkordb" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white mono" />
           </div>
         </div>
         <div>
-          <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Password</label>
+          <label for="dbPassInput" class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Password</label>
           <input id="dbPassInput" type="password" placeholder="••••••••••••" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white mono" />
         </div>
         <div class="flex justify-end gap-2 pt-2">
-          <button onclick="document.getElementById('cloudModal').classList.add('hidden')" class="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300">Close</button>
-          <button onclick="saveCloudConfig()" class="px-4 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold">Connect</button>
+          <button type="button" aria-label="Close FalkorDB connection dialog" onclick="document.getElementById('cloudModal').classList.add('hidden')" class="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300">Close</button>
+          <button type="button" aria-label="Save FalkorDB connection" onclick="saveCloudConfig()" class="px-4 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold">Connect</button>
         </div>
       </div>
     </div>
@@ -771,6 +946,9 @@
     let centerViewMode = 'subgraph'; // 'subgraph' | 'fullgraph' | 'cypher'
     let fullGraphData = { nodes: [], edges: [] };
     let lastTriageResult = null;
+    let adminToken = '';
+    let lastEngineStatus = {};
+    let activeRequestId = 0;
 
     // Pan & Zoom state for SVG
     let svgScale = 1;
@@ -805,6 +983,7 @@
       Client_Issue:    { fill: '#f59e0b', stroke: '#fde68a', text: '#fef3c7', badge: 'TICKET' },
       Service:         { fill: '#0284c7', stroke: '#38bdf8', text: '#e0f2fe', badge: 'SERVICE' },
       Code_Module:     { fill: '#7c3aed', stroke: '#c084fc', text: '#f3e8ff', badge: 'JAVA MODULE' },
+      ArtifactVersion: { fill: '#9333ea', stroke: '#e9d5ff', text: '#f3e8ff', badge: 'ARTIFACT' },
       Change:          { fill: '#e11d48', stroke: '#fda4af', text: '#ffe4e6', badge: 'GIT COMMIT' },
       Requirement:     { fill: '#059669', stroke: '#34d399', text: '#d1fae5', badge: 'PRD / SRD' },
       CheckDefinition: { fill: '#0891b2', stroke: '#67e8f9', text: '#cffafe', badge: 'CHECK DEF' },
@@ -820,71 +999,222 @@
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function adminHeaders(extra = {}) {
+      const headers = { ...extra };
+      const token = adminToken.trim();
+      if (token) headers['X-FalkorTrace-Admin-Token'] = token;
+      return headers;
+    }
+
+    async function fetchJson(url, options = {}) {
+      const response = await fetch(url, {
+        ...options,
+        headers: adminHeaders(options.headers || {})
+      });
+      const raw = await response.text();
+      let payload = {};
+      try {
+        payload = raw ? JSON.parse(raw) : {};
+      } catch (_) {
+        payload = { detail: raw || response.statusText };
+      }
+      if (!response.ok) {
+        const detail = typeof payload.detail === 'object'
+          ? (payload.detail.message || payload.detail.code || 'Request failed')
+          : (payload.detail || payload.message || `Request failed (${response.status})`);
+        const error = new Error(detail);
+        error.status = response.status;
+        error.payload = payload;
+        throw error;
+      }
+      return payload;
+    }
+
+    function setHeroState(label, tone = 'fallback') {
+      const badge = document.getElementById('heroStateBadge');
+      if (!badge) return;
+      const tones = {
+        live: 'status-live',
+        fallback: 'status-fallback',
+        offline: 'status-offline'
+      };
+      badge.className = `text-[10px] font-bold px-2 py-0.5 rounded-full mono ${tones[tone] || tones.fallback}`;
+      badge.textContent = label;
+    }
+
+    function setGlobalNotice(message, kind = 'info') {
+      const notice = document.getElementById('globalNotice');
+      if (!notice) return;
+      if (!message) {
+        notice.classList.add('hidden');
+        notice.textContent = '';
+        return;
+      }
+      const styles = {
+        info: 'border-cyan-500/35 bg-cyan-950/20 text-cyan-100',
+        success: 'border-emerald-500/35 bg-emerald-950/20 text-emerald-100',
+        warning: 'border-amber-500/40 bg-amber-950/25 text-amber-100',
+        error: 'border-rose-500/45 bg-rose-950/25 text-rose-100'
+      };
+      notice.className = `mt-3 rounded-lg border px-3 py-2 text-[11px] ${styles[kind] || styles.info}`;
+      notice.textContent = message;
+    }
+
+    function setWorkspaceLoading(isLoading, label = 'Loading evidence…') {
+      const workspace = document.getElementById('workspaceShell');
+      if (workspace) workspace.setAttribute('aria-busy', String(isLoading));
+      if (isLoading) {
+        setHeroState(label.toUpperCase(), 'fallback');
+      }
+    }
+
+    function updateEngineStatus(fdb = {}) {
+      lastEngineStatus = fdb || {};
+      const mode = fdb.engine_mode || (fdb.is_live_server ? 'LIVE_FALKORDB' : 'IN_MEMORY_FALLBACK');
+      const isLive = mode === 'LIVE_FALKORDB';
+      const modeBadge = document.getElementById('engineModeBadge');
+      const dbBadge = document.getElementById('dbStatusBadge');
+      const strictBadge = document.getElementById('strictModeBadge');
+      const degraded = document.getElementById('degradedNotice');
+      if (modeBadge) {
+        modeBadge.className = `mt-1 text-[11px] font-extrabold px-2 py-1 rounded-lg mono truncate ${isLive ? 'status-live' : 'status-fallback'}`;
+        modeBadge.textContent = mode;
+      }
+      if (dbBadge) {
+        dbBadge.className = `text-[11px] font-bold mono ${isLive ? 'text-emerald-300' : 'text-amber-300'}`;
+        dbBadge.textContent = `${mode} · ${fdb.mode || 'ready'}`;
+      }
+      const pulse = document.getElementById('dbPulseDot');
+      if (pulse) pulse.className = `w-2 h-2 rounded-full ${isLive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`;
+      if (strictBadge) {
+        const strict = fdb.strict_mode === true;
+        strictBadge.className = `mt-1 text-[11px] font-extrabold px-2 py-1 rounded-lg mono truncate ${strict ? 'status-live' : 'status-fallback'}`;
+        strictBadge.textContent = `STRICT MODE: ${strict ? 'ON' : 'OFF'}`;
+      }
+      if (degraded) {
+        const warnings = [];
+        if (!isLive) warnings.push('DEGRADED: the graph is running in IN_MEMORY_FALLBACK; state is process-local for this demo.');
+        if (fdb.strict_mode === false) warnings.push('Strict database mode is OFF; live graph guarantees are relaxed.');
+        if (fdb.fallback_reason) warnings.push(`Reason: ${fdb.fallback_reason}`);
+        degraded.textContent = warnings.join(' ');
+        degraded.classList.toggle('hidden', warnings.length === 0);
+      }
+      const scope = document.getElementById('heroGraphScope');
+      if (scope && currentTenant) scope.textContent = `falkortrace:${currentTenant}`;
+      const graphKey = document.getElementById('activeGraphKeyBadge');
+      if (graphKey && currentTenant) graphKey.textContent = `falkortrace:${currentTenant}`;
+      const statusBox = document.getElementById('cloudCurrentStatusBox');
+      if (statusBox) statusBox.textContent = `Engine: ${mode} | Mode: ${fdb.mode || 'ready'} | Host: ${fdb.host || '--'}:${fdb.port || '--'} | Strict DB: ${fdb.strict_mode === true ? 'true' : 'false'}`;
+    }
+
+    function updateTrackStory(res = {}) {
+      const mem = res.memory_applicability || res.applicability || {};
+      const owner = res.oncall || {};
+      const track01 = document.getElementById('track01State');
+      const track02 = document.getElementById('track02State');
+      const track03 = document.getElementById('track03State');
+      if (track01) track01.textContent = res.outcome === 'unknown_service' ? 'Entity gate abstained' : `${(res.tool_trace || []).length} live tool calls`;
+      if (track02) track02.textContent = mem.decision || (res.outcome === 'answered_from_memory' ? 'Observation reused' : 'Memory gate evaluated');
+      if (track03) track03.textContent = owner.team ? `${owner.team} · ${owner.oncall_handle || 'owner resolved'}` : (res.outcome === 'not_in_the_graph' ? 'Evidence boundary found' : 'Owner pending');
+    }
+
+    function emptyStateHtml(message) {
+      return `<div class="rounded-lg border border-dashed border-slate-700 bg-slate-950/50 p-4 text-center text-[11px] text-slate-500">${escapeHtml(message)}</div>`;
+    }
+
+    function handleUiError(error, context) {
+      console.error(`${context}:`, error);
+      if (error && error.status === 401) {
+        setGlobalNotice('Protected route rejected the request. Add the backend admin token for this tab, then retry the action.', 'warning');
+        const state = document.getElementById('adminTokenState');
+        if (state) state.textContent = 'Authentication required by the backend.';
+        openAdminModal();
+      } else {
+        setGlobalNotice(`${context}: ${error?.message || 'Unexpected error'}`, 'error');
+      }
+      setHeroState('ERROR', 'offline');
     }
 
     async function initDashboard() {
       setupSvgPanZoom();
-      await loadHealthAndGraph();
-      await runScenario(1);
+      setWorkspaceLoading(true, 'Connecting');
+      try {
+        await loadHealthAndGraph();
+        await runScenario(1);
+      } catch (error) {
+        setWorkspaceLoading(false);
+        handleUiError(error, 'Dashboard initialization failed');
+      }
     }
 
     async function loadHealthAndGraph() {
-      try {
-        const [healthRes, graphRes] = await Promise.all([
-          fetch('/api/health').then(r => r.json()),
-          fetch(`/api/graph?tenant_id=${encodeURIComponent(currentTenant)}`).then(r => r.json())
-        ]);
+      const [healthRes, graphRes] = await Promise.all([
+        fetchJson('/api/health'),
+        fetchJson(`/api/graph?tenant_id=${encodeURIComponent(currentTenant)}`)
+      ]);
 
-        fullGraphData = graphRes;
-        document.getElementById('totalNodesCount').textContent = (graphRes.nodes || []).length;
-        document.getElementById('activeGraphKeyBadge').textContent = `falkortrace:${currentTenant}`;
+      fullGraphData = graphRes || { nodes: [], edges: [] };
+      const nodeCount = (fullGraphData.nodes || []).length;
+      document.getElementById('totalNodesCount').textContent = escapeHtml(nodeCount);
+      document.getElementById('activeGraphKeyBadge').textContent = `falkortrace:${currentTenant}`;
+      document.getElementById('heroGraphScope').textContent = `falkortrace:${currentTenant}`;
 
-        const fdb = healthRes.falkordb || {};
-        const engineMode = fdb.engine_mode || (fdb.is_live_server ? 'LIVE_FALKORDB' : 'IN_MEMORY_FALLBACK');
-        document.getElementById('dbStatusBadge').textContent =
-          `Engine: ${engineMode} (${fdb.mode || 'ready'})`;
-        document.getElementById('dbHostInput').value = fdb.host || '';
-        document.getElementById('dbPortInput').value = fdb.port || 6379;
-        document.getElementById('dbUserInput').value = fdb.username || 'falkordb';
-        document.getElementById('cloudCurrentStatusBox').textContent =
-          `Engine Mode: ${engineMode} | Mode: ${fdb.mode} | Host: ${fdb.host}:${fdb.port} | Strict DB: ${fdb.strict_db_mode}`;
+      const fdb = healthRes.falkordb || graphRes.falkordb || {};
+      updateEngineStatus(fdb);
+      document.getElementById('dbHostInput').value = fdb.host || '';
+      document.getElementById('dbPortInput').value = fdb.port || 6379;
+      document.getElementById('dbUserInput').value = fdb.username || 'falkordb';
 
-        if (healthRes.llm && healthRes.llm.configured) {
-          document.getElementById('llmBtnLabel').textContent = `LLM: ${healthRes.llm.provider.toUpperCase()} (${healthRes.llm.key_preview})`;
-        } else {
-          document.getElementById('llmBtnLabel').textContent = `LLM Key (Auto/Deterministic)`;
-        }
-      } catch (e) {
-        console.error('Health/Graph load error:', e);
+      if (healthRes.llm && healthRes.llm.configured) {
+        document.getElementById('llmBtnLabel').textContent = `LLM: ${String(healthRes.llm.provider || '').toUpperCase()} (configured)`;
+      } else {
+        document.getElementById('llmBtnLabel').textContent = 'LLM Key (Auto/Deterministic)';
       }
+      setGlobalNotice('', 'info');
+      return { healthRes, graphRes };
     }
 
     async function switchTenant(tenantId) {
       currentTenant = tenantId;
-      await loadHealthAndGraph();
-      await runScenario(1);
+      document.getElementById('heroGraphScope').textContent = `falkortrace:${currentTenant}`;
+      try {
+        await loadHealthAndGraph();
+        await runScenario(1);
+      } catch (error) {
+        handleUiError(error, 'Tenant switch failed');
+      }
     }
 
     async function runScenario(num) {
       currentScenario = num;
-      document.querySelectorAll('.scenario-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.scenario-btn').forEach(btn => {
+        btn.classList.remove('active');
+        btn.setAttribute('aria-pressed', 'false');
+      });
       const activeBtn = document.getElementById(`scen-${num}`);
-      if (activeBtn) activeBtn.classList.add('active');
+      if (activeBtn) {
+        activeBtn.classList.add('active');
+        activeBtn.setAttribute('aria-pressed', 'true');
+      }
 
-      const cfg = (SCENARIOS[currentTenant] || SCENARIOS['killbill-prod'])[num];
+      const cfg = ((SCENARIOS[currentTenant] || SCENARIOS['killbill-prod'])[num]) || SCENARIOS['killbill-prod'][1];
       currentService = cfg.service;
       currentTicketId = cfg.ticket_id;
       currentDepth = cfg.depth;
       document.getElementById('depthSlider').value = currentDepth;
       document.getElementById('depthValue').textContent = currentDepth;
+      document.getElementById('scenarioStatus').textContent = `Case ${num} · ${cfg.ticket_id || cfg.service} · running`;
+      setGlobalNotice('', 'info');
 
-      // For scenario 6 (Exact Fingerprint Memory Hit) or scenario 7 (Same Service, Different Input Guard),
-      // prime a finding on TICKET-4902 / NEXUS-701 first so the applicability gate is demonstrated live
+      // Scenarios 6 and 7 prime the prior observation so the applicability decision is visible live.
       if (num === 6 || num === 7) {
         const primeTicket = currentTenant === 'nexus-commerce' ? 'NEXUS-701' : 'TICKET-4902';
         const primeService = currentTenant === 'nexus-commerce' ? 'checkout-edge-gateway' : 'billing-edge-api';
-        await fetch('/api/triage', {
+        await fetchJson('/api/triage', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -909,6 +1239,7 @@
     async function onDepthChange(val) {
       currentDepth = parseInt(val, 10);
       document.getElementById('depthValue').textContent = currentDepth;
+      document.getElementById('scenarioStatus').textContent = `Case ${currentScenario} · depth ${currentDepth} · running`;
       await executeTriageCall({
         tenant_id: currentTenant,
         service: currentService,
@@ -921,9 +1252,13 @@
     async function submitCustomQuestion(e) {
       e.preventDefault();
       const q = document.getElementById('askInput').value.trim();
-      if (!q) return;
+      if (!q) {
+        setGlobalNotice('Enter a ticket, service, or question before investigating.', 'warning');
+        return;
+      }
+      setWorkspaceLoading(true, 'Routing question');
       try {
-        const res = await fetch('/api/ask', {
+        const res = await fetchJson('/api/ask', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -932,7 +1267,7 @@
             depth: currentDepth,
             bypass_memory: false
           })
-        }).then(r => r.json());
+        });
 
         if (res.tenant_id && res.tenant_id !== currentTenant) {
           currentTenant = res.tenant_id;
@@ -942,27 +1277,42 @@
         currentService = res.queried_service || currentService;
         currentTicketId = res.ticket_id || null;
         lastTriageResult = res;
+        // The question route can persist a Finding/Observation too; keep the graph tab
+        // synchronized with the result just rendered in the workspace.
+        const graphRes = await fetchJson(`/api/graph?tenant_id=${encodeURIComponent(currentTenant)}`);
+        fullGraphData = graphRes || { nodes: [], edges: [] };
+        document.getElementById('totalNodesCount').textContent = (fullGraphData.nodes || []).length;
         renderComparisonWorkspace(res);
-      } catch (err) {
-        console.error('Custom question failed:', err);
+        document.getElementById('scenarioStatus').textContent = `Custom question · ${res.ticket_id || res.queried_service || 'routed'} · complete`;
+        setWorkspaceLoading(false);
+      } catch (error) {
+        setWorkspaceLoading(false);
+        handleUiError(error, 'Custom question failed');
       }
     }
 
     async function executeTriageCall(payload) {
+      const requestId = ++activeRequestId;
+      setWorkspaceLoading(true, 'Running graph trace');
       try {
-        const res = await fetch('/api/triage', {
+        const res = await fetchJson('/api/triage', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
-        }).then(r => r.json());
+        });
+        if (requestId !== activeRequestId) return;
         lastTriageResult = res;
-        // Refresh graph snapshot so any newly recorded (:Finding) node is present
-        const graphRes = await fetch(`/api/graph?tenant_id=${encodeURIComponent(currentTenant)}`).then(r => r.json());
-        fullGraphData = graphRes;
-        document.getElementById('totalNodesCount').textContent = (graphRes.nodes || []).length;
+        // Refresh graph snapshot so any newly recorded (:Finding) node is present.
+        const graphRes = await fetchJson(`/api/graph?tenant_id=${encodeURIComponent(currentTenant)}`);
+        if (requestId !== activeRequestId) return;
+        fullGraphData = graphRes || { nodes: [], edges: [] };
+        document.getElementById('totalNodesCount').textContent = (fullGraphData.nodes || []).length;
         renderComparisonWorkspace(res);
-      } catch (err) {
-        console.error('Triage execution error:', err);
+        document.getElementById('scenarioStatus').textContent = `Case ${currentScenario} · ${res.verdict || res.outcome || 'complete'}`;
+        setWorkspaceLoading(false);
+      } catch (error) {
+        setWorkspaceLoading(false);
+        handleUiError(error, 'Triage execution failed');
       }
     }
 
@@ -971,10 +1321,16 @@
     // =====================================================================
     function renderComparisonWorkspace(res) {
       const vcomp = res.vector_rag_comparison || {};
+      const engineStatus = res.engine_status || lastEngineStatus || {};
+      const verdict = res.verdict || res.outcome || 'READY';
+      const stateTone = res.outcome === 'unknown_service' ? 'offline' : (res.outcome === 'answered_from_memory' || verdict === 'WORKING_AS_PER_PRD' ? 'live' : 'fallback');
 
-      // Top Scoreboard updates
+      // Top scoreboard and narrative state.
+      updateEngineStatus(engineStatus);
       document.getElementById('centerLatencyBadge').textContent = `${res.total_latency_ms || 0} ms`;
-      document.getElementById('dbStatusBadge').textContent = `Engine: ${res.engine_mode || 'FalkorDB'} (${res.total_latency_ms || 0} ms)`;
+      document.getElementById('heroLatency').textContent = `${res.total_latency_ms || 0} ms`;
+      setHeroState(String(verdict).replace(/_/g, ' '), stateTone);
+      updateTrackStory(res);
 
       // -------------------------------------------------------------------
       // 1. LEFT PANE: ❌ LEXICAL TF-IDF BASELINE (k=3)
@@ -989,8 +1345,8 @@
 
       const chunksContainer = document.getElementById('ragChunksList');
       const chunks = vcomp.top_k_chunks || [];
-      chunksContainer.innerHTML = chunks.map((c, i) => {
-        const pct = Math.round((c.similarity || 0) * 100);
+      chunksContainer.innerHTML = chunks.length ? chunks.map((c, i) => {
+        const pct = Math.min(100, Math.max(0, Math.round((Number(c.similarity) || 0) * 100)));
         const badgeHtml = c.is_root_cause
           ? `<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">Local Match Only</span>`
           : `<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40">❌ Wrong / Local Chunk</span>`;
@@ -998,35 +1354,35 @@
           <div class="rounded-lg border border-slate-800 bg-slate-900/90 p-2.5">
             <div class="flex items-center justify-between gap-1 mb-1">
               <div class="flex items-center gap-1.5 min-w-0">
-                <span class="text-[10px] font-extrabold px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 mono">#${i + 1}</span>
+                <span class="text-[10px] font-extrabold px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 mono">#${escapeHtml(i + 1)}</span>
                 <span class="text-xs font-bold text-white truncate mono">${escapeHtml(c.doc_id)}</span>
               </div>
               ${badgeHtml}
             </div>
             <div class="flex items-center justify-between text-[10px] text-slate-400 mb-1">
               <span>${escapeHtml(c.chunk_type)} (${escapeHtml(c.service)})</span>
-              <span class="font-bold text-rose-300 mono">TF-IDF Cos: ${c.similarity}</span>
+              <span class="font-bold text-rose-300 mono">TF-IDF Cos: ${escapeHtml(c.similarity)}</span>
             </div>
             <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mb-1.5">
-              <div class="h-full bg-gradient-to-r from-rose-500 to-amber-500" style="width: ${pct}%"></div>
+              <div class="h-full bg-gradient-to-r from-rose-500 to-amber-500" style="width: ${escapeHtml(pct)}%"></div>
             </div>
             <p class="text-[11px] text-slate-300 line-clamp-2">${escapeHtml(c.snippet)}</p>
           </div>
         `;
-      }).join('');
+      }).join('') : emptyStateHtml('No lexical chunks returned for this query.');
 
       // -------------------------------------------------------------------
       // 2. CENTER PANE: 🧠 CORE CENTRAL UNIT: FALKORDB GRAPH ENGINE
       // -------------------------------------------------------------------
       document.getElementById('whyFalkorWonText').textContent = vcomp.why_falkordb_succeeded || '';
       const prims = vcomp.falkordb_primitives || [];
-      document.getElementById('falkorPrimitivesList').innerHTML = prims.map(p =>
-        `<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 mono">${escapeHtml(p)}</span>`
-      ).join('');
+      document.getElementById('falkorPrimitivesList').innerHTML = prims.length
+        ? prims.map(p => `<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 mono">${escapeHtml(p)}</span>`).join('')
+        : emptyStateHtml('No graph primitives reported.');
 
       // Breadcrumb chain
       const crumbs = res.breadcrumb_nodes || [];
-      document.getElementById('breadcrumbChain').innerHTML = crumbs.map((node, idx) => {
+      document.getElementById('breadcrumbChain').innerHTML = crumbs.length ? crumbs.map((node, idx) => {
         const isLast = idx === crumbs.length - 1;
         const colorCls = isLast
           ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 font-bold'
@@ -1035,20 +1391,29 @@
           <span class="px-2 py-0.5 rounded border ${colorCls}">${escapeHtml(node)}</span>
           ${!isLast ? '<span class="text-emerald-400 font-bold">➔</span>' : ''}
         `;
-      }).join('');
+      }).join('') : emptyStateHtml('No connected evidence path returned.');
 
-      // Show/Hide Rollback button if PATCH_REGRESSION is active
+      // Show/Hide rollback action if PATCH_REGRESSION is active.
       const rollbackBtn = document.getElementById('rollbackBtn');
       if (res.verdict === 'PATCH_REGRESSION') {
         rollbackBtn.classList.remove('hidden');
       } else {
         rollbackBtn.classList.add('hidden');
       }
+      const safeActionBtn = document.getElementById('safeActionBtn');
+      const actionBadge = document.getElementById('actionSafetyBadge');
+      const actionText = document.getElementById('recommendedActionText');
+      if (actionText) actionText.textContent = res.recommended_next_action || 'No mutation recommended; preserve the verified evidence packet.';
+      if (safeActionBtn) safeActionBtn.classList.toggle('hidden', res.verdict !== 'PATCH_REGRESSION');
+      if (actionBadge) {
+        actionBadge.className = `text-[9px] font-bold px-1.5 py-0.5 rounded mono ${res.verdict === 'PATCH_REGRESSION' ? 'bg-amber-500/20 text-amber-200 border border-amber-500/35' : 'bg-slate-800 text-slate-300'}`;
+        actionBadge.textContent = res.verdict === 'PATCH_REGRESSION' ? 'ADMIN GATED' : 'NO MUTATION';
+      }
 
       // Render Dynamic Agent Pipeline Strip
       const handoffs = res.agent_handoffs || [];
       document.getElementById('swarmTotalSteps').textContent = `${handoffs.length} Agent Steps • ${(res.tool_trace || []).length} Tool Calls`;
-      document.getElementById('agentSwarmStrip').innerHTML = handoffs.map(h => {
+      document.getElementById('agentSwarmStrip').innerHTML = handoffs.length ? handoffs.map(h => {
         const statusColor = h.status === 'blocked'
           ? 'border-rose-500/50 bg-rose-950/30 text-rose-300'
           : h.status === 'memory_hit'
@@ -1057,29 +1422,29 @@
         return `
           <div class="rounded-lg border ${statusColor} p-2">
             <div class="flex items-center justify-between text-[10px] font-bold">
-              <span class="truncate">${h.step}. ${escapeHtml(h.agent)}</span>
-              <span class="mono shrink-0 ml-1">${h.latency_ms}ms</span>
+              <span class="truncate">${escapeHtml(h.step)}. ${escapeHtml(h.agent)}</span>
+              <span class="mono shrink-0 ml-1">${escapeHtml(h.latency_ms)}ms</span>
             </div>
             <div class="text-[10px] text-slate-400 truncate mt-0.5" title="${escapeHtml(h.summary)}">
               ${escapeHtml(h.summary)}
             </div>
           </div>
         `;
-      }).join('');
+      }).join('') : emptyStateHtml('No agent handoffs returned.');
 
       // Render Cypher & Verification Traces
       const traces = res.tool_trace || [];
       document.getElementById('cypherCountBadge').textContent = traces.length;
-      document.getElementById('cypherTraceList').innerHTML = traces.map((t, idx) => `
+      document.getElementById('cypherTraceList').innerHTML = traces.length ? traces.map((t, idx) => `
         <div class="rounded-lg border border-slate-800 bg-slate-900/90 p-3">
           <div class="flex flex-wrap items-center justify-between gap-2 mb-1.5">
             <div class="flex items-center gap-2">
-              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 mono">#${idx + 1} ${escapeHtml(t.tool)}</span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 mono">#${escapeHtml(idx + 1)} ${escapeHtml(t.tool)}</span>
               <span class="text-[10px] text-slate-400">${escapeHtml(t.agent)}</span>
             </div>
             <div class="flex items-center gap-2 text-[10px] mono">
               <span class="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300">graph.${escapeHtml(t.mode)}()</span>
-              <span class="text-emerald-400 font-bold">${t.latency_ms} ms (${t.rows} rows)</span>
+              <span class="text-emerald-400 font-bold">${escapeHtml(t.latency_ms)} ms (${escapeHtml(t.rows)} rows)</span>
             </div>
           </div>
           <pre class="text-[11px] bg-slate-950 p-2.5 rounded border border-slate-800 text-emerald-200 overflow-x-auto mono">${escapeHtml(t.cypher)}</pre>
@@ -1087,7 +1452,7 @@
             Params: <span class="text-amber-300">${escapeHtml(JSON.stringify(t.arguments))}</span>
           </div>
         </div>
-      `).join('');
+      `).join('') : emptyStateHtml('No Cypher or algorithm calls returned for this outcome.');
 
       // Render Interactive Graph SVG (Focused Subgraph or Full Graph)
       renderInteractiveGraphSvg(res);
@@ -1112,7 +1477,7 @@
 
       const cit = res.citations || {};
       const verif = res.verification || cit.verification_observation || null;
-      const memApp = res.memory_applicability || {};
+      const memApp = res.memory_applicability || res.applicability || {};
 
       // Render Executable Sandbox Verification & Memory Gate Card
       const chkBadge = document.getElementById('checkStatusBadge');
@@ -1120,16 +1485,19 @@
       const memBox = document.getElementById('memoryApplicabilityBox');
 
       if (verif && verif.check_id) {
-        const passFailColor = verif.status === 'FAIL'
+        const passFailColor = verif.status === 'FAIL' || verif.status === 'ERROR'
           ? 'bg-rose-500/25 text-rose-300 border border-rose-500/40'
           : 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40';
+        const requirementId = verif.requirement_id || verif.req_id || 'contract';
+        const requirementVersion = verif.requirement_version || verif.req_version || '';
+        const duration = verif.duration_ms || verif.latency_ms || 0;
         chkBadge.className = `text-[10px] font-bold px-1.5 py-0.5 rounded mono ${passFailColor}`;
-        chkBadge.textContent = `${verif.check_id}: ${verif.status}`;
+        chkBadge.textContent = `${verif.check_id}: ${verif.status || 'UNKNOWN'}`;
         verifBox.innerHTML = `
-          <div><span class="text-slate-400">Run ID:</span> <span class="text-cyan-300">${escapeHtml(verif.run_id)}</span> (${verif.latency_ms || 0}ms)</div>
+          <div><span class="text-slate-400">Run ID:</span> <span class="text-cyan-300">${escapeHtml(verif.run_id)}</span> (${escapeHtml(duration)}ms)</div>
           <div><span class="text-slate-400">Artifact:</span> <span class="text-amber-300">${escapeHtml(verif.artifact_version)} (sha:${escapeHtml(verif.artifact_sha)})</span></div>
-          <div><span class="text-slate-400">Expected (${escapeHtml(verif.req_id)} ${escapeHtml(verif.req_version)}):</span> <span class="text-emerald-300">${escapeHtml(verif.expected_value)}</span></div>
-          <div><span class="text-slate-400">Observed Output:</span> <span class="${verif.status === 'FAIL' ? 'text-rose-300 font-bold' : 'text-emerald-300 font-bold'}">${escapeHtml(verif.observed_value)}</span></div>
+          <div><span class="text-slate-400">Expected (${escapeHtml(requirementId)} ${escapeHtml(requirementVersion)}):</span> <span class="text-emerald-300">${escapeHtml(verif.expected_value)}</span></div>
+          <div><span class="text-slate-400">Observed Output:</span> <span class="${verif.status === 'FAIL' || verif.status === 'ERROR' ? 'text-rose-300 font-bold' : 'text-emerald-300 font-bold'}">${escapeHtml(verif.observed_value)}</span></div>
         `;
       } else if (res.outcome === 'answered_from_memory') {
         chkBadge.className = 'text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-500/25 text-teal-300 border border-teal-500/40 mono';
@@ -1220,9 +1588,9 @@
         : 'FALLBACK TRIGGERED';
       document.getElementById('guardrailReasonText').textContent = guard.reason || 'Verified by accepts(sentence, answer).';
       const tokens = (res.allowed_tokens || []).slice(0, 14);
-      document.getElementById('allowedTokensCloud').innerHTML = tokens.map(tok =>
-        `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-emerald-300 mono">${escapeHtml(tok)}</span>`
-      ).join('');
+      document.getElementById('allowedTokensCloud').innerHTML = tokens.length
+        ? tokens.map(tok => `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-emerald-300 mono">${escapeHtml(tok)}</span>`).join('')
+        : emptyStateHtml('No grounded entity tokens returned.');
     }
 
     // =====================================================================
@@ -1305,11 +1673,11 @@
         const midY = (p1.y + p2.y) / 2 - 6;
 
         return `
-          <g opacity="${opacity}">
-            <line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"
-                  stroke="${stroke}" stroke-width="${width}" marker-end="${marker}" class="${animClass}" />
+          <g opacity="${escapeHtml(opacity)}">
+            <line x1="${escapeHtml(p1.x)}" y1="${escapeHtml(p1.y)}" x2="${escapeHtml(p2.x)}" y2="${escapeHtml(p2.y)}"
+                  stroke="${stroke}" stroke-width="${escapeHtml(width)}" marker-end="${marker}" class="${animClass}" />
             ${(isHi || isViolates) ? `
-              <text x="${midX}" y="${midY}" text-anchor="middle" fill="${isViolates ? '#fda4af' : '#6ee7b7'}"
+              <text x="${escapeHtml(midX)}" y="${escapeHtml(midY)}" text-anchor="middle" fill="${isViolates ? '#fda4af' : '#6ee7b7'}"
                     font-size="9" font-family="JetBrains Mono" font-weight="600">${escapeHtml(e.label)}</text>
             ` : ''}
           </g>
@@ -1324,23 +1692,33 @@
         const opacity = (highlightNodeSet.size === 0 || isHi) ? 1.0 : 0.42;
         const radius = isHi ? 20 : 15;
         const ringHtml = isHi
-          ? `<circle cx="${p.x}" cy="${p.y}" r="${radius + 6}" fill="none" stroke="${style.stroke}" stroke-width="1.8" stroke-dasharray="4 3" />`
+          ? `<circle cx="${escapeHtml(p.x)}" cy="${escapeHtml(p.y)}" r="${escapeHtml(radius + 6)}" fill="none" stroke="${style.stroke}" stroke-width="1.8" stroke-dasharray="4 3" />`
           : '';
         const payloadStr = encodeURIComponent(JSON.stringify(n));
 
         return `
-          <g class="cursor-pointer" opacity="${opacity}" onclick="inspectGraphNode('${payloadStr}')">
+          <g class="cursor-pointer" opacity="${escapeHtml(opacity)}" data-node-payload="${escapeHtml(payloadStr)}" role="button" tabindex="0" aria-label="Inspect ${escapeHtml(n.label)}">
             ${ringHtml}
-            <circle cx="${p.x}" cy="${p.y}" r="${radius}" fill="${style.fill}" stroke="${style.stroke}" stroke-width="${isHi ? 2.5 : 1.5}" />
-            <text x="${p.x}" y="${p.y - radius - 7}" text-anchor="middle" fill="#94a3b8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">
+            <circle cx="${escapeHtml(p.x)}" cy="${escapeHtml(p.y)}" r="${escapeHtml(radius)}" fill="${style.fill}" stroke="${style.stroke}" stroke-width="${isHi ? 2.5 : 1.5}" />
+            <text x="${escapeHtml(p.x)}" y="${escapeHtml(p.y - radius - 7)}" text-anchor="middle" fill="#94a3b8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">
               ${escapeHtml(style.badge)}
             </text>
-            <text x="${p.x}" y="${p.y + radius + 13}" text-anchor="middle" fill="${isHi ? '#ffffff' : '#cbd5e1'}" font-size="${isHi ? '11' : '9.5'}" font-family="JetBrains Mono" font-weight="${isHi ? '700' : '500'}">
+            <text x="${escapeHtml(p.x)}" y="${escapeHtml(p.y + radius + 13)}" text-anchor="middle" fill="${isHi ? '#ffffff' : '#cbd5e1'}" font-size="${isHi ? '11' : '9.5'}" font-family="JetBrains Mono" font-weight="${isHi ? '700' : '500'}">
               ${escapeHtml(n.label)}
             </text>
           </g>
         `;
       }).join('');
+      nodesGroup.querySelectorAll('[data-node-payload]').forEach(nodeEl => {
+        const inspect = () => inspectGraphNode(nodeEl.getAttribute('data-node-payload'));
+        nodeEl.addEventListener('click', inspect);
+        nodeEl.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            inspect();
+          }
+        });
+      });
     }
 
     function computeLayeredLayout(nodes, res) {
@@ -1442,56 +1820,100 @@
       }
     }
 
+    function openAdminModal() {
+      const modal = document.getElementById('adminModal');
+      modal.classList.remove('hidden');
+      const input = document.getElementById('adminTokenInput');
+      const state = document.getElementById('adminTokenState');
+      if (state) state.textContent = adminToken ? 'A token is active in memory for this tab.' : 'No token loaded.';
+      window.setTimeout(() => input?.focus(), 0);
+    }
+
+    function closeAdminModal() {
+      document.getElementById('adminModal').classList.add('hidden');
+    }
+
+    function saveAdminToken() {
+      adminToken = document.getElementById('adminTokenInput').value.trim();
+      document.getElementById('adminTokenInput').value = '';
+      document.getElementById('adminTokenState').textContent = adminToken
+        ? 'Token active in memory for this tab; it will not be persisted.'
+        : 'No token loaded.';
+      setGlobalNotice(adminToken ? 'Admin token loaded for protected actions in this tab.' : 'No admin token loaded; open Admin again if a protected route asks for one.', 'info');
+      closeAdminModal();
+    }
+
+    function clearAdminToken() {
+      adminToken = '';
+      document.getElementById('adminTokenInput').value = '';
+      document.getElementById('adminTokenState').textContent = 'Token cleared from memory.';
+    }
+
     // =====================================================================
     // LIVE GRAPH MUTATIONS: SIMULATED ROLLBACK, CHAOS FAULT, MEMORY CLEAR
     // =====================================================================
     async function triggerLiveRollback() {
-      if (!lastTriageResult) return;
+      if (!lastTriageResult) {
+        setGlobalNotice('Run an investigation before requesting a rollback.', 'warning');
+        return;
+      }
       const cit = lastTriageResult.citations || {};
       const targetSvc = cit.root_cause_service || lastTriageResult.root_cause_service || 'proration-engine';
       const targetSha = cit.patch_sha || '9f82d1a';
-      await fetch('/api/remediate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      setGlobalNotice(`Protected action requested for ${targetSvc} at sha:${targetSha}.`, 'warning');
+      try {
+        await fetchJson('/api/remediate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenant_id: currentTenant, service: targetSvc, sha: targetSha })
+        });
+        setGlobalNotice('Rollback completed in the sandbox. Re-running the same case to prove the new artifact state.', 'success');
+        await executeTriageCall({
           tenant_id: currentTenant,
-          service: targetSvc,
-          sha: targetSha
-        })
-      });
-      await executeTriageCall({
-        tenant_id: currentTenant,
-        service: currentService,
-        ticket_id: currentTicketId,
-        depth: currentDepth,
-        bypass_memory: false
-      });
+          service: currentService,
+          ticket_id: currentTicketId,
+          depth: currentDepth,
+          bypass_memory: false
+        });
+      } catch (error) {
+        handleUiError(error, 'Protected rollback failed');
+      }
     }
 
     async function clearEpisodicMemory() {
-      await fetch('/api/memory/clear', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenant_id: currentTenant })
-      });
-      await loadHealthAndGraph();
-      await executeTriageCall({
-        tenant_id: currentTenant,
-        service: currentService,
-        ticket_id: currentTicketId,
-        depth: currentDepth,
-        bypass_memory: true
-      });
+      try {
+        await fetchJson('/api/memory/clear', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenant_id: currentTenant })
+        });
+        setGlobalNotice('Episodic memory cleared for this tenant. Running a fresh verification.', 'success');
+        await loadHealthAndGraph();
+        await executeTriageCall({
+          tenant_id: currentTenant,
+          service: currentService,
+          ticket_id: currentTicketId,
+          depth: currentDepth,
+          bypass_memory: true
+        });
+      } catch (error) {
+        handleUiError(error, 'Memory clear failed');
+      }
     }
 
     async function resetTenantGraph() {
-      await fetch('/api/seed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenant_id: currentTenant })
-      });
-      await loadHealthAndGraph();
-      await runScenario(1);
+      try {
+        await fetchJson('/api/seed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenant_id: currentTenant })
+        });
+        setGlobalNotice('Tenant graph reset to its seeded demo state.', 'success');
+        await loadHealthAndGraph();
+        await runScenario(1);
+      } catch (error) {
+        handleUiError(error, 'Graph reset failed');
+      }
     }
 
     function openChaosModal() {
@@ -1511,45 +1933,44 @@
         document.getElementById('tenantSelect').value = currentTenant;
       }
 
-      await fetch('/api/inject-fault', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      try {
+        await fetchJson('/api/inject-fault', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenant_id: currentTenant, service: svc, author: '@chaos-bot', summary })
+        });
+        setGlobalNotice(`Controlled fault simulation applied to ${svc}; the graph will now rediscover and verify it.`, 'warning');
+        const entrySvc = currentTenant === 'nexus-commerce' ? 'checkout-edge-gateway' : 'billing-edge-api';
+        const entryTicket = currentTenant === 'nexus-commerce' ? 'NEXUS-701' : 'TICKET-4902';
+        currentService = entrySvc;
+        currentTicketId = entryTicket;
+        await loadHealthAndGraph();
+        await executeTriageCall({
           tenant_id: currentTenant,
-          service: svc,
-          author: '@chaos-bot',
-          summary: summary
-        })
-      });
-
-      const entrySvc = currentTenant === 'nexus-commerce' ? 'checkout-edge-gateway' : 'billing-edge-api';
-      const entryTicket = currentTenant === 'nexus-commerce' ? 'NEXUS-701' : 'TICKET-4902';
-      currentService = entrySvc;
-      currentTicketId = entryTicket;
-      await loadHealthAndGraph();
-      await executeTriageCall({
-        tenant_id: currentTenant,
-        service: entrySvc,
-        ticket_id: entryTicket,
-        depth: 4,
-        bypass_memory: true
-      });
+          service: entrySvc,
+          ticket_id: entryTicket,
+          depth: 4,
+          bypass_memory: true
+        });
+      } catch (error) {
+        handleUiError(error, 'Fault injection failed');
+      }
     }
 
     // =====================================================================
-    // 12-CASE 4-SYSTEM ABLATION BENCHMARK MODAL
+    // 12-CASE 4-SYSTEM FIXTURE BENCHMARK MODAL
     // =====================================================================
     async function openBenchmarkModal() {
       document.getElementById('benchmarkModal').classList.remove('hidden');
       document.getElementById('benchmarkTableBody').innerHTML =
-        `<tr><td colspan="6" class="p-6 text-center text-emerald-300 mono">Running 12-case 4-system ablation benchmark against FalkorDB...</td></tr>`;
+        `<tr><td colspan="6" class="p-6 text-center text-emerald-300 mono" role="status">Running the 12-case repository-fixture benchmark…</td></tr>`;
 
       try {
-        const res = await fetch('/api/benchmark', {
+        const res = await fetchJson('/api/benchmark', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tenant_id: currentTenant })
-        }).then(r => r.json());
+        });
 
         const sys4 = res.four_system_comparison || {};
         const sysA = sys4.system_a_lexical_tfidf || res.vector_rag_scorecard || {};
@@ -1557,14 +1978,15 @@
         const sysC = sys4.system_c_falkordb_verifier_stateless || {};
         const sysD = sys4.system_d_falkordb_verifier_memory || res.falkordb_graph_scorecard || {};
 
-        document.getElementById('bmEngineModeBadge').textContent = res.engine_mode || 'FalkorDB';
-        document.getElementById('bmSysAAcc').textContent = `${sysA.accuracy_pct ?? 0}% (${sysA.passed_count || '0/12'})`;
-        document.getElementById('bmSysBAcc').textContent = `${sysB.accuracy_pct ?? 50}% (${sysB.passed_count || '6/12'})`;
-        document.getElementById('bmSysCAcc').textContent = `${sysC.accuracy_pct ?? 100}% (${sysC.passed_count || '12/12'})`;
-        document.getElementById('bmSysDAcc').textContent = `${sysD.accuracy_pct ?? 100}% (${sysD.passed_count || '12/12'})`;
-        document.getElementById('bmGraphLat').textContent = `${res.avg_query_latency_ms || 10} ms`;
+        document.getElementById('bmEngineModeBadge').textContent = res.engine_mode || lastEngineStatus.engine_mode || 'FalkorDB';
+        document.getElementById('bmSysAAcc').textContent = `${sysA.accuracy_pct ?? '--'}% (${sysA.passed_count ?? '--'})`;
+        document.getElementById('bmSysBAcc').textContent = `${sysB.accuracy_pct ?? '--'}% (${sysB.passed_count ?? '--'})`;
+        document.getElementById('bmSysCAcc').textContent = `${sysC.accuracy_pct ?? '--'}% (${sysC.passed_count ?? '--'})`;
+        document.getElementById('bmSysDAcc').textContent = `${sysD.accuracy_pct ?? '--'}% (${sysD.passed_count ?? '--'})`;
+        document.getElementById('bmGraphLat').textContent = `${res.avg_query_latency_ms ?? '--'} ms`;
 
-        document.getElementById('benchmarkTableBody').innerHTML = (res.cases || []).map(c => `
+        const cases = res.cases || [];
+        document.getElementById('benchmarkTableBody').innerHTML = cases.length ? cases.map(c => `
           <tr class="hover:bg-slate-900/70 transition">
             <td class="p-2.5 font-bold text-white mono">
               <div>${escapeHtml(c.id)}: ${escapeHtml(c.title)}</div>
@@ -1585,11 +2007,12 @@
               <div class="font-bold text-emerald-400 mono">✅ ${escapeHtml(c.falkordb_verdict)} (${escapeHtml(c.falkordb_outcome)})</div>
               <div class="text-[10px] text-slate-300">${escapeHtml(c.why_falkordb_won)}</div>
             </td>
-            <td class="p-2.5 font-bold text-cyan-300 mono">${c.falkordb_latency_ms} ms</td>
+            <td class="p-2.5 font-bold text-cyan-300 mono">${escapeHtml(c.falkordb_latency_ms)} ms</td>
           </tr>
-        `).join('');
-      } catch (e) {
-        console.error(e);
+        `).join('') : `<tr><td colspan="6" class="p-6 text-center text-slate-500">No benchmark cases returned.</td></tr>`;
+      } catch (error) {
+        document.getElementById('benchmarkTableBody').innerHTML = `<tr><td colspan="6" class="p-6 text-center text-rose-300">${escapeHtml(error.message || 'Benchmark failed.')}</td></tr>`;
+        handleUiError(error, 'Benchmark failed');
       }
     }
 
@@ -1608,51 +2031,59 @@
     }
     async function saveLLMConfig() {
       const provider = document.getElementById('llmProviderSelect').value;
-      const apiKey = document.getElementById('llmKeyInput').value.trim();
-      await fetch('/api/config/llm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, api_key: apiKey })
-      });
-      closeLLMModal();
-      await loadHealthAndGraph();
-      await executeTriageCall({
-        tenant_id: currentTenant,
-        service: currentService,
-        ticket_id: currentTicketId,
-        depth: currentDepth,
-        bypass_memory: true
-      });
+      const apiKeyInput = document.getElementById('llmKeyInput');
+      const apiKey = apiKeyInput.value.trim();
+      try {
+        await fetchJson('/api/config/llm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider, api_key: apiKey })
+        });
+        apiKeyInput.value = '';
+        closeLLMModal();
+        setGlobalNotice('LLM configuration updated. Re-running with the grounded response guardrail.', 'success');
+        await loadHealthAndGraph();
+        await executeTriageCall({
+          tenant_id: currentTenant,
+          service: currentService,
+          ticket_id: currentTicketId,
+          depth: currentDepth,
+          bypass_memory: true
+        });
+      } catch (error) {
+        apiKeyInput.value = '';
+        handleUiError(error, 'LLM configuration failed');
+      }
     }
 
     async function openDepthCompareModal() {
       document.getElementById('depthCompareModal').classList.remove('hidden');
       const body = document.getElementById('depthCompareBody');
-      body.innerHTML = `<div class="col-span-2 text-center p-4 text-cyan-300 mono">Comparing Depth=1 vs Depth=4 on FalkorDB Cloud...</div>`;
-      const res = await fetch('/api/compare-depth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenant_id: currentTenant,
-          service: currentService,
-          ticket_id: currentTicketId
-        })
-      }).then(r => r.json());
-
-      const d1 = res.shallow_depth_1 || {};
-      const d4 = res.deep_depth_4 || {};
-      body.innerHTML = `
-        <div class="rounded-xl border border-amber-500/40 bg-amber-950/20 p-4 space-y-2">
-          <div class="text-xs font-extrabold uppercase text-amber-300">⚠️ Depth = 1 (Shallow 1-Hop Join)</div>
-          <div class="font-bold text-white mono">Verdict: ${escapeHtml(d1.verdict)} (${d1.total_latency_ms} ms)</div>
-          <p class="text-slate-300 leading-relaxed">${escapeHtml(d1.summary)}</p>
-        </div>
-        <div class="rounded-xl border border-emerald-500/40 bg-emerald-950/20 p-4 space-y-2">
-          <div class="text-xs font-extrabold uppercase text-emerald-300">✅ Depth = 4 (Full Multi-Hop FalkorDB Traversal)</div>
-          <div class="font-bold text-white mono">Verdict: ${escapeHtml(d4.verdict)} (${d4.total_latency_ms} ms)</div>
-          <p class="text-slate-300 leading-relaxed">${escapeHtml(d4.summary)}</p>
-        </div>
-      `;
+      body.innerHTML = `<div class="col-span-2 text-center p-4 text-cyan-300 mono" role="status">Comparing Depth=1 vs Depth=4 on FalkorDB…</div>`;
+      try {
+        const res = await fetchJson('/api/compare-depth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenant_id: currentTenant, service: currentService, ticket_id: currentTicketId })
+        });
+        const d1 = res.shallow_depth_1 || {};
+        const d4 = res.deep_depth_4 || {};
+        body.innerHTML = `
+          <div class="rounded-xl border border-amber-500/40 bg-amber-950/20 p-4 space-y-2">
+            <div class="text-xs font-extrabold uppercase text-amber-300">⚠️ Depth = 1 (Shallow 1-Hop Join)</div>
+            <div class="font-bold text-white mono">Verdict: ${escapeHtml(d1.verdict)} (${escapeHtml(d1.total_latency_ms)} ms)</div>
+            <p class="text-slate-300 leading-relaxed">${escapeHtml(d1.summary)}</p>
+          </div>
+          <div class="rounded-xl border border-emerald-500/40 bg-emerald-950/20 p-4 space-y-2">
+            <div class="text-xs font-extrabold uppercase text-emerald-300">✅ Depth = 4 (Full Multi-Hop FalkorDB Traversal)</div>
+            <div class="font-bold text-white mono">Verdict: ${escapeHtml(d4.verdict)} (${escapeHtml(d4.total_latency_ms)} ms)</div>
+            <p class="text-slate-300 leading-relaxed">${escapeHtml(d4.summary)}</p>
+          </div>
+        `;
+      } catch (error) {
+        body.innerHTML = `<div class="col-span-2 rounded-lg border border-rose-500/40 bg-rose-950/20 p-4 text-center text-rose-200">${escapeHtml(error.message || 'Depth comparison failed.')}</div>`;
+        handleUiError(error, 'Depth comparison failed');
+      }
     }
 
     function openCloudModal() {
@@ -1662,16 +2093,42 @@
       const host = document.getElementById('dbHostInput').value.trim();
       const port = parseInt(document.getElementById('dbPortInput').value || '6379', 10);
       const username = document.getElementById('dbUserInput').value.trim();
-      const password = document.getElementById('dbPassInput').value.trim();
-      await fetch('/api/config/falkordb', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host, port, username, password, ssl: false })
-      });
-      document.getElementById('cloudModal').classList.add('hidden');
-      await loadHealthAndGraph();
-      await runScenario(1);
+      const passwordInput = document.getElementById('dbPassInput');
+      const password = passwordInput.value.trim();
+      try {
+        await fetchJson('/api/config/falkordb', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ host, port, username, password, ssl: false })
+        });
+        passwordInput.value = '';
+        document.getElementById('cloudModal').classList.add('hidden');
+        setGlobalNotice('FalkorDB connection settings submitted. Refreshing runtime health and the demo case.', 'success');
+        await loadHealthAndGraph();
+        await runScenario(1);
+      } catch (error) {
+        passwordInput.value = '';
+        handleUiError(error, 'FalkorDB configuration failed');
+      }
     }
+
+
+    function closeModalOnEscape(event) {
+      if (event.key !== 'Escape') return;
+      const openModal = document.querySelector('[role="dialog"]:not(.hidden)');
+      if (!openModal) return;
+      const closers = {
+        benchmarkModal: closeBenchmarkModal,
+        chaosModal: closeChaosModal,
+        llmModal: closeLLMModal,
+        depthCompareModal: () => document.getElementById('depthCompareModal').classList.add('hidden'),
+        cloudModal: () => document.getElementById('cloudModal').classList.add('hidden'),
+        adminModal: closeAdminModal
+      };
+      if (closers[openModal.id]) closers[openModal.id]();
+    }
+
+    document.addEventListener('keydown', closeModalOnEscape);
 
     window.addEventListener('DOMContentLoaded', initDashboard);
   </script>

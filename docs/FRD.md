@@ -42,9 +42,10 @@ FalkorTrace fulfills functional requirements across all three hackathon tracks s
   - **Service Criticality & Oncall Escalation (`service_criticality_pagerank`):** Executes `CALL algo.pageRank('Service', 'DEPENDS_ON') YIELD node, score` and joins `(p:Person)-[:ONCALL_FOR]->(t:Team)-[:OWNS]->(s:Service)` plus `(expert:Person)-[w:WORKED_ON]->(s:Service)`.
   - **Topology Island & Chokepoint Detection (`analyze_topology_islands_and_bridges`):** Executes `CALL algo.WCC` and `CALL algo.betweenness` to identify isolated services (powering `not_in_the_graph`) and bridge bottlenecks.
 
-- **`FR-T1-06` (Simulated Artifact Rollback & Chaos Fault Injection):**
+- **`FR-T1-06` (Simulated Artifact Rollback & Controlled Chaos Fault Simulation):**
   - *Input:* `tenant_id: str`, `service: str`, `sha: str`
   - *Behavior:* `/api/remediate` switches `c.active_artifact_sha` to the clean revision (`7c31b09` / `55a19c2`), marks dependent `(:Finding)` nodes as `validity_state = 'STALE_VERSION_MISMATCH'` (preserving full historical audit trails), and runs `run_approved_check` to prove recovery (`expected == observed`).
+  - `/api/inject-fault` is the corresponding controlled graph-only simulation: it creates a faulty `ArtifactVersion`, invalidates stale memory, and changes no external deployment or incident-management system.
 
 ---
 
@@ -52,16 +53,17 @@ FalkorTrace fulfills functional requirements across all three hackathon tracks s
 
 - **`FR-T2-01` (Minimum Applicability Fingerprint Gate):**
   - Every `(:Finding)` and `(:Observation)` is stamped with `(tenant_id, service, input_fingerprint, artifact_sha, req_version, check_version)`.
-  - `evaluate_memory_applicability` enforces three deterministic decisions:
-    1. `REUSE_APPLICABLE_OBSERVATION`: Exact match on `input_fingerprint` and active `artifact_sha` $\rightarrow$ returns `answered_from_memory` in `~1ms`.
-    2. `HYPOTHESIS_ONLY_DIFFERENT_INPUT`: Same service and valid code version, but different ticket input parameters (`TICKET-4905` Day 29 or `TICKET-4906` invalid plan code) $\rightarrow$ refuses blind reuse and runs verification for the current inputs.
+  - `evaluate_memory_applicability` enforces four deterministic decisions:
+    1. `REUSE_APPLICABLE_OBSERVATION`: Exact match on the complete applicability fingerprint $\rightarrow$ returns `answered_from_memory` without re-running the sandbox; request latency is deployment-dependent.
+    2. `HYPOTHESIS_ONLY_DIFFERENT_INPUT`: Same service and valid code version, but different supported ticket input parameters (for example `TICKET-4905` Day 29) $\rightarrow$ refuses blind reuse and runs verification for the current inputs.
     3. `INVALIDATED_STALE_VERSION`: Stored finding's `artifact_sha` was superseded by a rollback or chaos deployment $\rightarrow$ rejects stale memory and re-runs verification.
+    4. `INSUFFICIENT_EVIDENCE`: Unknown/cross-service tickets, malformed payloads, or reachable graph paths without an allowlisted check $\rightarrow$ abstains without claiming a verification result.
 
 - **`FR-T2-02` (3-Tier Memory Model):**
   - Combines **Episodic Memory** (`:Finding` + `:Observation`), **Semantic Memory** (`:Service`, `:Code_Module`, `:Requirement`, `:CheckDefinition`), and **Procedural Memory** (`:Runbook` linked via `[:REMEDIATES]->(:Requirement)`) in a single FalkorDB graph.
 
 - **`FR-T2-03` (Dynamic Evidence-Driven Tool Selection):**
-  - Invalid payload evidence (`payload_valid == False`) dynamically selects the schema verification branch (`CHK-WEBHOOK-ISO4217` / `CHK-PRORATION-30-360`) and skips unnecessary multi-hop patch traversal.
+  - Supported invalid payload evidence (`payload_valid == False`) dynamically selects the mapped schema verification branch (`CHK-WEBHOOK-ISO4217`) and skips unnecessary multi-hop patch traversal. An unmapped invalid-plan scenario is reported as `INSUFFICIENT_EVIDENCE` rather than being sent through an unrelated check.
 
 - **`FR-T2-04` (Logical Multigraph Tenancy & Scope Validation):**
   - Switching tenants (`killbill-prod` $\leftrightarrow$ `nexus-commerce`) switches the underlying FalkorDB graph via `db.select_graph(f"falkortrace:{tenant_id}")` after allowlist validation via `validate_tenant_scope(tenant_id)`.

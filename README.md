@@ -5,7 +5,7 @@
 [![Database](https://img.shields.io/badge/FalkorDB-v4.2.0_GraphBLAS-indigo)](https://www.falkordb.com/)
 [![Backend](https://img.shields.io/badge/FastAPI-Python_3.11-009688)](https://fastapi.tiangolo.com/)
 [![Protocol](https://img.shields.io/badge/MCP-12_Tools_(Model_Context_Protocol)-amber)](https://modelcontextprotocol.io/)
-[![Tests](https://img.shields.io/badge/Pytest-10%2F10_Passing-emerald)](./tests/test_falkortrace.py)
+[![Tests](https://img.shields.io/badge/Pytest-21%2F21_Passing-emerald)](./tests/test_falkortrace.py)
 [![Live Demo](https://img.shields.io/badge/Live_Demo-Vercel_(ap--south--1)-success)](https://falkor-trace.vercel.app/)
 
 ---
@@ -20,27 +20,27 @@ Even more importantly, a production engineering agent **cannot rely on pre-seede
 
 **FalkorTrace** places **FalkorDB at the center of a closed-loop verification architecture**:
 1. **Left Pane (`❌ 1. Lexical TF-IDF Baseline (k=3)`)**: Computes deterministic TF-IDF Cosine Similarity over a **fair serialized fact corpus** (containing the exact same service, dependency, code module, commit, and PRD facts stored in FalkorDB), exposing single-hop retrieval blindness without handicapping the corpus.
-2. **Center Hero Pane (`🧠 2. Core Central Unit: Live FalkorDB Graph Engine`)**: Traverses multi-hop dependencies (`[:DEPENDS_ON*1..4]`), native GraphBLAS algorithms (`algo.SPpaths`, `algo.pageRank`, `algo.WCC`, `algo.betweenness`), and selects allowlisted verification checks (`(:CheckDefinition)-[:VERIFIES]->(:Requirement)`). Supports **Live Chaos Fault Injection** (`/api/inject-fault`) and **Simulated Artifact Rollback** (`/api/remediate`).
+2. **Center Hero Pane (`🧠 2. Core Central Unit: Live FalkorDB Graph Engine`)**: Traverses multi-hop dependencies (`[:DEPENDS_ON*1..4]`), native GraphBLAS algorithms (`algo.SPpaths`, `algo.pageRank`, `algo.WCC`, `algo.betweenness`), and selects allowlisted verification checks (`(:CheckDefinition)-[:VERIFIES]->(:Requirement)`). Supports a **controlled graph-only fault simulation** (`/api/inject-fault`) and **simulated artifact rollback** (`/api/remediate`); neither action changes an external deployment or incident system.
 3. **Right Pane (`✅ 3. FalkorDB + Sandbox Verifier & Version-Aware Memory`)**: Executes deterministic sandboxed verification fixtures (`run_approved_check`) against the active `ArtifactVersion` (`sha:9f82d1a` vs `sha:7c31b09`), compares observed outputs against independent PRD specifications, and gates episodic memory reuse on a **Minimum Applicability Fingerprint** `(tenant_id, service, input_fingerprint, artifact_sha, req_version, check_version)`.
 
 ---
 
-## Live 12-Case 4-System Ablation Benchmark (`/api/benchmark`)
+## Reproducible 12-Case 4-System Fixture Benchmark (`/api/benchmark`)
 
-To isolate the exact contribution of **Multi-Hop Graph Traversal**, **Sandboxed Verification**, and **Version-Aware Memory**, FalkorTrace evaluates **4 Systems** across **12 scenarios** (including 4-hop regressions, boundary proration cases, seat-discount rules, webhook payload errors, unknown services, isolated WCC islands, held-out tickets, same-service multi-case memory safety, and post-remediation stale-version invalidation):
+To isolate the contribution of **Multi-Hop Graph Traversal**, **Sandboxed Verification**, and **Version-Aware Memory**, FalkorTrace evaluates **4 Systems** across a frozen **12-case repository-fixture benchmark** (including 4-hop regressions, boundary proration cases, seat-discount rules, webhook payload errors, unknown services, isolated WCC islands, same-service multi-case memory safety, and post-remediation stale-version invalidation). Baseline scores are computed from the baseline's observable top-k output against an independently coded case oracle; they are not copied from the graph agent's verdict. This is a reproducible demo benchmark, not a held-out production evaluation: fixtures are repository-local, the baseline is lexical TF-IDF rather than vector-RAG, and latency is not a cold/warm/reuse performance study.
 
 | System | Architecture | Verified Accuracy (12 Cases) | Key Finding |
 | :--- | :--- | :--- | :--- |
-| **System A** | `Lexical TF-IDF Chunk Baseline (k=3)` (Fair Serialized Fact Corpus, No Graph, No Verifier) | **0.0% (0/12)** | Blind to 2–3 hop causal chains and lacks executable verification or entity gating. |
-| **System B** | `Local Retrieval + Verifier (Depth=1, No Multi-Hop Graph)` | **50.0% (6/12)** | Verifies 0/1-hop local services (`TICKET-4908`, `TICKET-4915`), but misses all 3-hop `proration-engine` and `tax-ledger-adapter` regressions. |
+| **System A** | `Lexical TF-IDF Chunk Baseline (k=3)` (Fair Serialized Fact Corpus, No Graph, No Verifier) | **33.3% (4/12)** | Retrieves local contract/payload text in some cases but misses the multi-hop regression and memory cases. |
+| **System B** | `Local Retrieval + Verifier (Depth=1, No Multi-Hop Graph)` | **33.3% (4/12)** | Verifies local cases but cannot discover downstream roots or topology evidence. |
 | **System C** | `FalkorDB Multi-Hop Graph + Sandbox Verifier (Stateless, Memory Disabled)` | **100.0% (12/12)** | Achieves 100% accuracy via multi-hop traversal + sandboxed check execution, but re-runs full traversal & verification on every repeat incident. |
-| **System D** | `FalkorDB Multi-Hop Graph + Sandbox Verifier + Version-Aware Memory` | **100.0% (12/12)** | **100% accuracy + `~1ms` O(1) reuse** on exact fingerprint match, **0% false reuse** on same-service different-input tickets, and **0% stale reuse** after artifact rollback. |
+| **System D** | `FalkorDB Multi-Hop Graph + Sandbox Verifier + Version-Aware Memory` | **100.0% (12/12)** | **100% accuracy + one avoided repeat check** on exact fingerprint match, **0% false reuse** on same-service different-input tickets, and **0% stale reuse** after artifact rollback. |
 
 ---
 
 ## 4 Deterministic Answer Shapes & Adjudicated Verdicts
 
-Every investigation deterministically classifies the incident into one of **4 Answer Shapes** (`answered_with_path`, `answered_from_memory`, `not_in_the_graph`, `unknown_service`):
+Every investigation deterministically classifies the incident into one of **5 Answer Shapes** (`answered_with_path`, `answered_from_memory`, `not_in_the_graph`, `unknown_service`, `insufficient_evidence`):
 
 | Verdict | Meaning | Graph Lineage & Sandboxed Verification Proof |
 | :--- | :--- | :--- |
@@ -48,6 +48,7 @@ Every investigation deterministically classifies the incident into one of **4 An
 | **`WORKING_AS_PER_PRD`** | All candidate checks pass (`status='PASS'`); the client's expectation contradicts an explicit PRD/SRD contract threshold. | `(:Service)-[:IMPLEMENTED_BY]->(:Code_Module)<-[:TARGETS]-(:CheckDefinition)` + `Observation(status='PASS', expected='0% (<50 seats)', observed='0% (42 seats)')` |
 | **`DATA_PAYLOAD_ISSUE`** | The client sent a malformed webhook/API payload (e.g., `"USDT-ERC20"` or invalid plan code) rejected by the validator check while service code is healthy. | `(:Client_Issue {payload_valid: false})` + `Observation(payload_schema_failed=True, check_id='CHK-WEBHOOK-ISO4217')` |
 | **`UNMODELED_DEPENDENCY` / `UNMODELED_OR_UNKNOWN`** | The queried service either sits in an isolated WCC island (`not_in_the_graph`) or does not exist in the tenant graph (`unknown_service`). | Blocked at `resolve_service` Entity Resolution Gate or detected via `CALL algo.WCC(...)`. |
+| **`INSUFFICIENT_EVIDENCE`** | The requested ticket is unknown or cross-service, the payload is malformed, or no graph-backed allowlisted check can execute. FalkorTrace abstains instead of fabricating a healthy or failing verdict. | No verification result is claimed; the response records the evidence boundary and the rejected input. |
 
 ---
 
@@ -95,13 +96,14 @@ Every investigation deterministically classifies the incident into one of **4 An
 
 1. **Graph-Guided Sandboxed Verification (Zero Pre-Baked Answers):** Verdicts are never read from static boolean properties. FalkorDB narrows candidate services and selects allowlisted `CheckDefinition` nodes (`CHK-PRORATION-30-360`, `CHK-DISCOUNT-SEAT-50`, `CHK-WEBHOOK-ISO4217`, `CHK-TAX-ROUNDING`, `CHK-NEXUS-TTL`), which execute deterministic fixtures in [`backend/verifier.py`](./backend/verifier.py) against versioned code artifacts (`ArtifactVersion`) and compare observed outputs against an independent requirement specification table.
 2. **Version-Aware Investigation Memory & Selective Invalidation:** Every `(:Finding)` and `(:Observation)` stores a **Minimum Applicability Fingerprint**: `(tenant_id, service, input_fingerprint, artifact_sha, req_version, check_version)`.
-   - **Exact Match (`REUSE_APPLICABLE_OBSERVATION`):** Reuses verified finding in `~1ms`.
+   - **Exact Match (`REUSE_APPLICABLE_OBSERVATION`):** Reuses the verified observation without re-running the sandbox; full request latency varies by deployment and network.
    - **Same Service, Different Input (`HYPOTHESIS_ONLY_DIFFERENT_INPUT`):** Refuses to blindly copy a prior verdict onto a different ticket/payload on the same service; runs fresh verification.
    - **Changed Artifact (`INVALIDATED_STALE_VERSION`):** When `/api/remediate` or `/api/inject-fault` updates `active_artifact_sha`, prior findings are marked `status = 'STALE_VERSION_MISMATCH'` (preserving full audit history in FalkorDB rather than deleting nodes) and fresh verification is forced.
 3. **Zero LLM-Generated Cypher & Strict `ro_query()` Separation:** All graph reads execute through parameterized Cypher tools in [`backend/tools.py`](./backend/tools.py) via `graph.ro_query(cypher, params)`.
 4. **Logical Multigraph Tenant Isolation:** Isolates tenant state via `db.select_graph(f"falkortrace:{tenant_id}")` with strict tenant allowlist validation (`validate_tenant_scope`).
 5. **Explicit Engine Mode Telemetry (`LIVE_FALKORDB` vs `IN_MEMORY_FALLBACK`):** Reports live engine status in `/api/health` and UI badges, with `FALKORTRACE_STRICT_DB=1` support to disable fallback when strict live-DB testing is required.
 6. **Entity-Reference Guardrail (`accepts()`):** [`accepts(sentence, answer)`](./backend/agent.py) verifies that every service and code module identifier in generated prose exists in FalkorDB's traversed result set (while behavioral truth is proven by the sandboxed `Observation` node).
+7. **Protected Administration Surface:** Destructive actions and runtime configuration require `FALKORTRACE_ADMIN_TOKEN` when configured. The public dashboard can remain read-only while local development can omit the token.
 
 ---
 
@@ -114,12 +116,12 @@ Every investigation deterministically classifies the incident into one of **4 An
 - `(:ArtifactVersion {id, module, service, version_tag, git_sha, code_hash, status})`
 - `(:Requirement {id, doc_type, title, rule_text, version})` *(`PRD` or `SRD`)*
 - `(:CheckDefinition {id, check_version, target_module, target_service, requirement_id, requirement_version, description})`
-- `(:Observation {id, run_id, check_id, check_version, case_id, target_module, target_service, requirement_id, requirement_version, artifact_sha, artifact_version, code_hash, input_fingerprint, expected_value, observed_value, status, violation_reproduced, at})`
+- `(:Observation {observation_id, tenant_id, service, run_id, check_id, check_version, case_id, target_module, target_service, requirement_id, requirement_version, artifact_sha, artifact_version, code_hash, input_fingerprint, expected_value, observed_value, status, violation_reproduced, at})`
 - `(:Change {sha, patch_version, summary, diff_snippet, at, hours_ago, author})`
 - `(:Team {name, slack_channel, pagerduty_schedule})`
 - `(:Person {name, handle, email, role})`
 - `(:Runbook {id, verdict_type, title, steps})` *(Procedural Memory)*
-- `(:Finding {id, verdict, text, root_cause_node, ticket_id, input_fingerprint, artifact_sha, code_hash, req_version, check_id, check_version, observation_run_id, expected_value, observed_value, status, at, session})` *(Version-Aware Episodic Memory)*
+- `(:Finding {id, tenant_id, service, verdict, text, root_cause_node, ticket_id, input_fingerprint, artifact_sha, requirement_id, req_version, check_id, check_version, observation_id, run_id, validity_state, at, session})` *(Version-Aware Episodic Memory)*
 
 ### Relationships
 ```cypher
@@ -132,6 +134,8 @@ Every investigation deterministically classifies the incident into one of **4 An
 (chk:CheckDefinition)-[:VERIFIES]->(r:Requirement)
 (obs:Observation)-[:OBSERVED_ON]->(c:Code_Module)
 (obs:Observation)-[:EXECUTED_CHECK]->(chk:CheckDefinition)
+(obs:Observation)-[:TESTED_REQUIREMENT]->(r:Requirement)
+(obs:Observation)-[:USED_ARTIFACT]->(av:ArtifactVersion)
 (ch:Change)-[:MODIFIED]->(c:Code_Module)
 (ch:Change)-[:DEPLOYED_TO]->(s:Service)
 (t:Team)-[:OWNS]->(s:Service)
@@ -167,10 +171,14 @@ FalkorTrace/
 │   ├── SRD.md                       # Software Requirements Document
 │   └── FRD.md                       # Functional Requirements Document
 ├── tests/
-│   └── test_falkortrace.py          # End-to-End Pytest Verification Suite (10 Tests)
+│   └── test_falkortrace.py          # End-to-End Pytest Verification Suite (21 Tests)
 ├── Dockerfile
 ├── docker-compose.yml               # Pinned falkordb/falkordb:v4.2.0
+├── Walkthrough.md                   # Complete functionality & 3–5 minute live demo script
 ├── vercel.json
+├── Makefile                         # Reproducible test, compile, run, benchmark commands
+├── requirements.lock                # Pinned Python dependency graph
+├── .python-version                  # Python 3.11 runtime pin
 └── requirements.txt
 ```
 
@@ -180,16 +188,23 @@ FalkorTrace/
 
 ### 1. Local Python + FalkorDB Cloud (or Local Docker)
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Install the pinned runtime dependencies
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.lock
 
 # Configure FalkorDB connection (copy .env.example to .env)
 cp .env.example .env
 
 # Start FastAPI server (auto-verifies and seeds tenant graphs on startup)
-uvicorn backend.main:app --reload --port 8000
+make run
 ```
 Open **http://localhost:8000**.
+
+For a strict submission-style run, configure `FALKORTRACE_STRICT_DB=1`,
+`FALKORTRACE_ADMIN_TOKEN`, and `FALKORTRACE_CORS_ORIGINS` in `.env`. The
+dashboard keeps the admin token in memory only and sends it only to protected
+routes.
 
 ### 2. Docker Compose (Pinned `falkordb/falkordb:v4.2.0` + FalkorTrace App)
 ```bash
@@ -198,8 +213,17 @@ docker compose up --build
 
 ### 3. Run End-to-End Verification Suite
 ```bash
-python -m pytest -v
+make test
 ```
+
+### 4. Compile and benchmark smoke checks
+```bash
+make compile
+make benchmark
+```
+
+See [`Walkthrough.md`](./Walkthrough.md) for the complete functionality checklist
+and a timed 3–5 minute live demo script.
 
 ---
 
@@ -208,14 +232,34 @@ python -m pytest -v
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/api/health` | FalkorDB engine mode (`LIVE_FALKORDB` / `IN_MEMORY_FALLBACK`), active multigraphs, and MCP tool count (`12`) |
-| `GET` | `/api/graph?tenant_id=killbill-prod` | Full node and directed edge topology (including `CheckDefinition`, `Observation`, `Finding`) |
+| `GET` | `/api/graph?tenant_id=killbill-prod` | Full node and directed edge topology (including `CheckDefinition`, `Observation`, `Finding`); `graph_source` identifies live FalkorDB reads versus the explicit fixture fallback |
 | `POST` | `/api/triage` | Execute dynamic graph-guided triage + sandboxed verification for `(service, ticket_id, depth)` |
-| `POST` | `/api/benchmark` | Run the live **12-Case 4-System Ablation Benchmark** (Systems A, B, C, D) |
+| `POST` | `/api/benchmark` | Run the reproducible **12-Case Fixture Benchmark** (Systems A, B, C, D); protected when an admin token is configured |
 | `POST` | `/api/ask` | Natural-language question router (`"Why was ACME overcharged on TICKET-4902?"`) |
 | `POST` | `/api/compare-depth` | Side-by-side comparison of shallow `depth=1` vs. multi-hop `depth=4` |
-| `POST` | `/api/remediate` | Simulated artifact rollback: switches `active_artifact_sha`, marks prior findings `STALE_VERSION_MISMATCH`, and re-runs check |
-| `POST` | `/api/inject-fault` | Simulated chaos fault injection: deploys faulty artifact version to downstream service and invalidates prior findings |
-| `POST` | `/api/memory/clear` | Clear `(:Finding)` and `(:Observation)` memory nodes for the active tenant |
-| `POST` | `/api/seed` | Reset and re-seed the specified tenant graph |
+| `POST` | `/api/remediate` | Protected simulated artifact rollback: switches `active_artifact_sha`, marks prior findings `STALE_VERSION_MISMATCH`, and re-runs check |
+| `POST` | `/api/inject-fault` | Protected controlled simulation: creates a faulty artifact version in the demo graph and invalidates prior findings; no external system is changed |
+| `POST` | `/api/memory/clear` | Protected clear of `(:Finding)` and `(:Observation)` memory nodes for the active tenant |
+| `POST` | `/api/seed` | Protected reset and re-seed of the specified tenant graph |
 | `GET` | `/api/mcp/tools` | Model Context Protocol (MCP) tool definitions and JSON schemas (12 tools) |
-| `POST` | `/api/mcp/call` | Execute any parameterized MCP tool directly |
+| `POST` | `/api/mcp/call` | Execute any parameterized MCP tool directly; protected when an admin token is configured |
+
+### Protected routes
+
+When `FALKORTRACE_ADMIN_TOKEN` is non-empty, the following routes require either
+`X-FalkorTrace-Admin-Token: <token>` or `Authorization: Bearer <token>`:
+
+```text
+/api/config/llm
+/api/config/falkordb
+/api/benchmark
+/api/remediate
+/api/inject-fault
+/api/memory/clear
+/api/seed
+/api/mcp/call
+```
+
+The health endpoint never returns API-key previews or database passwords. Public
+deployments should also set `FALKORTRACE_STRICT_DB=1` and an explicit
+`FALKORTRACE_CORS_ORIGINS` allowlist.

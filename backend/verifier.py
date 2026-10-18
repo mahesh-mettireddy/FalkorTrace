@@ -259,7 +259,42 @@ INDEPENDENT_REQUIREMENT_SPECIFICATIONS: Dict[str, Dict[str, Any]] = {
 }
 
 ALLOWLISTED_ISO_4217_FIAT = {"USD", "EUR", "GBP", "INR", "CAD", "AUD", "JPY", "SGD", "CHF"}
-UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+)
+
+
+def register_dynamic_artifact_version(
+    git_sha: str,
+    module: str,
+    service: str,
+    version_tag: str,
+    code_hash: str,
+    source_snippet: str = "",
+    faulty: bool = True,
+) -> Dict[str, Any]:
+    """Register a graph-created artifact for the local deterministic verifier.
+
+    Fault injection creates an ArtifactVersion at runtime rather than using one of
+    the seeded catalog entries.  The verifier still requires an explicit catalog
+    record so an arbitrary SHA cannot silently select a fixture implementation.
+    """
+    sha = (git_sha or "").strip()
+    if not sha or not module or not service or not version_tag or not code_hash:
+        raise ValueError("Dynamic artifact registration requires SHA, module, service, version, and code hash.")
+    artifact = {
+        "id": f"ART-{service.upper()}-{sha}",
+        "module": module,
+        "service": service,
+        "version_tag": version_tag,
+        "git_sha": sha,
+        "code_hash": code_hash,
+        "source_snippet": source_snippet,
+        "faulty": bool(faulty),
+        "dynamic": True,
+    }
+    ARTIFACT_VERSIONS_CATALOG[sha] = artifact
+    return artifact
 
 
 # ============================================================================
@@ -323,6 +358,8 @@ def build_minimum_applicability_fingerprint(
     artifact_sha: str,
     req_version: str,
     check_version: str,
+    requirement_id: str = "",
+    check_id: str = "",
 ) -> Dict[str, str]:
     """
     Construct the Judge's Page 6 Minimum Applicability Fingerprint:
@@ -334,7 +371,9 @@ def build_minimum_applicability_fingerprint(
         "service_scope": service or "UNKNOWN",
         "input_fingerprint": input_fingerprint or "UNKNOWN",
         "code_revision_sha": artifact_sha or "UNKNOWN",
+        "requirement_id": requirement_id or "UNKNOWN",
         "requirement_version": req_version or "UNKNOWN",
+        "check_id": check_id or "UNKNOWN",
         "check_definition_version": check_version or "UNKNOWN",
         "composite_key": "|".join(
             [
@@ -342,7 +381,9 @@ def build_minimum_applicability_fingerprint(
                 service or "UNKNOWN",
                 input_fingerprint or "UNKNOWN",
                 artifact_sha or "UNKNOWN",
+                requirement_id or "UNKNOWN",
                 req_version or "UNKNOWN",
+                check_id or "UNKNOWN",
                 check_version or "UNKNOWN",
             ]
         ),
@@ -393,7 +434,8 @@ def _exec_proration_fixture(artifact_sha: str, payload: Dict[str, Any]) -> Dict[
         spec_clause = f"PRD-INV-104 30/360 formula: ${delta} * ({remaining_days}/30) = ${expected_charge}"
 
     # 2. Execute the Actual Code Under Test for `artifact_sha`
-    is_faulty_artifact = artifact_sha == "9f82d1a"
+    artifact_meta = ARTIFACT_VERSIONS_CATALOG[artifact_sha]
+    is_faulty_artifact = bool(artifact_meta.get("faulty", artifact_sha == "9f82d1a"))
     if is_faulty_artifact:
         # Execute v4.12.2-faulty implementation
         if remaining_days == 15:
@@ -403,18 +445,12 @@ def _exec_proration_fixture(artifact_sha: str, payload: Dict[str, Any]) -> Dict[
                 Decimal("0.000001"), rounding=ROUND_CEILING
             )
         observed_charge = (delta * factor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        artifact_meta = ARTIFACT_VERSIONS_CATALOG["9f82d1a"]
     else:
         # Execute v4.12.1-clean / remediated implementation
         factor = (Decimal(remaining_days) / Decimal(30)).quantize(
             Decimal("0.00000001"), rounding=ROUND_HALF_UP
         )
         observed_charge = (delta * factor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        artifact_meta = ARTIFACT_VERSIONS_CATALOG.get(artifact_sha) or {
-            **ARTIFACT_VERSIONS_CATALOG["7c31b09"],
-            "git_sha": artifact_sha or "7c31b09",
-            "version_tag": "v4.12.1-clean" if artifact_sha == "7c31b09" else f"v4.12.3-hotfix ({artifact_sha})",
-        }
 
     violation_reproduced = observed_charge != expected_charge
     status = "FAIL" if violation_reproduced else "PASS"
@@ -451,7 +487,7 @@ def _exec_discount_fixture(artifact_sha: str, payload: Dict[str, Any]) -> Dict[s
 
     # Code execution under v4.11.8-clean
     observed_pct = 15 if active_seats >= 50 else 0
-    artifact_meta = ARTIFACT_VERSIONS_CATALOG["4e90b12"]
+    artifact_meta = ARTIFACT_VERSIONS_CATALOG[artifact_sha]
 
     violation_reproduced = observed_pct != spec_expected_pct
     client_mismatch = client_claimed_pct != spec_expected_pct
@@ -487,7 +523,7 @@ def _exec_webhook_validator_fixture(artifact_sha: str, payload: Dict[str, Any]) 
     if not idem_key or not UUID_RE.match(str(idem_key)):
         errors.append(f"idempotency_key '{idem_key}' is null or not a valid UUIDv4")
 
-    artifact_meta = ARTIFACT_VERSIONS_CATALOG["1c55f08"]
+    artifact_meta = ARTIFACT_VERSIONS_CATALOG[artifact_sha]
     payload_valid = len(errors) == 0
 
     return {
@@ -517,18 +553,13 @@ def _exec_tax_rounding_fixture(artifact_sha: str, payload: Dict[str, Any]) -> Di
     tax_rate = Decimal(str(payload.get("tax_rate", "0.185")))
 
     expected_tax = (subtotal * tax_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)
-    is_clean = artifact_sha == "2d88a10" or artifact_sha.startswith("hf")
+    artifact_meta = ARTIFACT_VERSIONS_CATALOG[artifact_sha]
+    is_clean = not bool(artifact_meta.get("faulty", artifact_sha != "2d88a10"))
 
     if is_clean:
         observed_tax = (subtotal * tax_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)
-        artifact_meta = ARTIFACT_VERSIONS_CATALOG["2d88a10"]
     else:
         observed_tax = (subtotal * tax_rate + Decimal("0.04")).quantize(Decimal("0.01"), rounding=ROUND_CEILING)
-        artifact_meta = {
-            "version_tag": f"v9.9-chaos-fault ({artifact_sha})",
-            "git_sha": artifact_sha,
-            "code_hash": _sha256_short(TAX_SOURCE_V9_9_FAULTY),
-        }
 
     violation_reproduced = observed_tax != expected_tax
     status = "FAIL" if violation_reproduced else "PASS"
@@ -558,16 +589,12 @@ def _exec_nexus_ttl_fixture(artifact_sha: str, payload: Dict[str, Any]) -> Dict[
     requested_sec = int(payload.get("hold_ttl_expected_sec", 600))
     expected_ttl = max(600, requested_sec)
 
-    is_faulty = artifact_sha == "88d12f0"
+    artifact_meta = ARTIFACT_VERSIONS_CATALOG[artifact_sha]
+    is_faulty = bool(artifact_meta.get("faulty", artifact_sha == "88d12f0"))
     if is_faulty:
         observed_ttl = 6
-        artifact_meta = ARTIFACT_VERSIONS_CATALOG["88d12f0"]
     else:
         observed_ttl = max(600, requested_sec)
-        artifact_meta = {
-            **ARTIFACT_VERSIONS_CATALOG["55a19c2"],
-            "git_sha": artifact_sha or "55a19c2",
-        }
 
     violation_reproduced = observed_ttl != expected_ttl
     status = "FAIL" if violation_reproduced else "PASS"
@@ -613,6 +640,16 @@ def execute_sandboxed_Verification_check(
             "run_id": run_id,
             "check_id": check_id,
             "case_id": case_id,
+            "check_version": "UNKNOWN",
+            "target_module": "",
+            "target_service": "",
+            "requirement_id": "UNKNOWN",
+            "requirement_version": "UNKNOWN",
+            "artifact_sha": artifact_sha or "UNKNOWN",
+            "artifact_version": "UNKNOWN",
+            "code_hash": "sha256:unknown",
+            "expected_value": "",
+            "observed_value": "",
             "status": "ERROR",
             "error": f"Check '{check_id}' is not in the allowlisted sandbox check catalogue.",
             "violation_reproduced": False,
@@ -621,14 +658,103 @@ def execute_sandboxed_Verification_check(
         }
 
     spec = INDEPENDENT_REQUIREMENT_SPECIFICATIONS[check_id]
+    artifact_meta = ARTIFACT_VERSIONS_CATALOG.get((artifact_sha or "").strip())
+    if artifact_meta is None:
+        return {
+            "run_id": run_id,
+            "check_id": check_id,
+            "case_id": case_id,
+            "check_version": spec["check_version"],
+            "target_module": spec["target_module"],
+            "target_service": spec["target_service"],
+            "requirement_id": spec["requirement_id"],
+            "requirement_version": spec["requirement_version"],
+            "artifact_sha": artifact_sha or "UNKNOWN",
+            "artifact_version": "UNKNOWN",
+            "code_hash": "sha256:unknown",
+            "expected_value": "",
+            "observed_value": "",
+            "status": "ERROR",
+            "error": f"Artifact '{artifact_sha}' is not in the allowlisted artifact catalogue.",
+            "violation_reproduced": False,
+            "duration_ms": round((time.perf_counter() - t0) * 1000.0, 3),
+            "logs": [f"[SANDBOX ERROR] Rejected non-allowlisted artifact_sha: {artifact_sha}"],
+        }
+    if (
+        artifact_meta.get("module") != spec["target_module"]
+        or artifact_meta.get("service") != spec["target_service"]
+    ):
+        return {
+            "run_id": run_id,
+            "check_id": check_id,
+            "case_id": case_id,
+            "check_version": spec["check_version"],
+            "target_module": spec["target_module"],
+            "target_service": spec["target_service"],
+            "requirement_id": spec["requirement_id"],
+            "requirement_version": spec["requirement_version"],
+            "artifact_sha": artifact_sha,
+            "artifact_version": artifact_meta.get("version_tag", "UNKNOWN"),
+            "code_hash": artifact_meta.get("code_hash", "sha256:unknown"),
+            "expected_value": "",
+            "observed_value": "",
+            "status": "ERROR",
+            "error": (
+                f"Artifact '{artifact_sha}' belongs to {artifact_meta.get('service')} / "
+                f"{artifact_meta.get('module')}, not {spec['target_service']} / {spec['target_module']}."
+            ),
+            "violation_reproduced": False,
+            "duration_ms": round((time.perf_counter() - t0) * 1000.0, 3),
+            "logs": [f"[SANDBOX ERROR] Artifact/check target mismatch for {artifact_sha} and {check_id}"],
+        }
+
     payload_dict: Dict[str, Any] = {}
-    if raw_payload:
+    if raw_payload is not None:
         try:
             parsed = json.loads(raw_payload)
-            if isinstance(parsed, dict):
-                payload_dict = parsed
-        except Exception:
-            pass
+        except (TypeError, ValueError) as exc:
+            return {
+                "run_id": run_id,
+                "check_id": check_id,
+                "case_id": case_id,
+                "check_version": spec["check_version"],
+                "target_module": spec["target_module"],
+                "target_service": spec["target_service"],
+                "requirement_id": spec["requirement_id"],
+                "requirement_version": spec["requirement_version"],
+                "artifact_sha": artifact_sha,
+                "artifact_version": artifact_meta.get("version_tag", "UNKNOWN"),
+                "code_hash": artifact_meta.get("code_hash", "sha256:unknown"),
+                "expected_value": "",
+                "observed_value": "",
+                "status": "ERROR",
+                "error": f"Malformed JSON payload: {exc.msg if hasattr(exc, 'msg') else str(exc)}",
+                "violation_reproduced": False,
+                "duration_ms": round((time.perf_counter() - t0) * 1000.0, 3),
+                "logs": ["[SANDBOX ERROR] Rejected malformed JSON payload."],
+            }
+        if not isinstance(parsed, dict):
+            return {
+                "run_id": run_id,
+                "check_id": check_id,
+                "case_id": case_id,
+                "check_version": spec["check_version"],
+                "target_module": spec["target_module"],
+                "target_service": spec["target_service"],
+                "requirement_id": spec["requirement_id"],
+                "requirement_version": spec["requirement_version"],
+                "artifact_sha": artifact_sha,
+                "artifact_version": artifact_meta.get("version_tag", "UNKNOWN"),
+                "code_hash": artifact_meta.get("code_hash", "sha256:unknown"),
+                "expected_value": "",
+                "observed_value": "",
+                "status": "ERROR",
+                "error": "Verification payload must be a JSON object.",
+                "violation_reproduced": False,
+                "duration_ms": round((time.perf_counter() - t0) * 1000.0, 3),
+                "logs": ["[SANDBOX ERROR] Rejected non-object JSON payload."],
+            }
+        payload_dict = parsed
 
     if check_id == "CHK-PRORATION-30-360":
         res = _exec_proration_fixture(artifact_sha, payload_dict)

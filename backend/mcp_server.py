@@ -80,6 +80,19 @@ def call_mcp_tool(
         ds = get_live_dataset_snapshot(graph, tid)
         active_map = {m["service"]: m.get("active_artifact_sha", "") for m in ds.get("code_modules", [])}
         in_fp = arguments.get("input_fingerprint") or compute_input_fingerprint(tid, svc, ticket_id)
+        check_map = {c.get("check_id"): c for c in ds.get("check_definitions", [])}
+        context_map: Dict[str, Dict[str, str]] = {}
+        for module in ds.get("code_modules", []):
+            check = check_map.get(module.get("check_id")) if module.get("check_id") else None
+            if check:
+                context = {
+                    "requirement_id": check.get("requirement_id", ""),
+                    "requirement_version": check.get("requirement_version", "UNKNOWN"),
+                    "check_id": check.get("check_id", ""),
+                    "check_version": check.get("check_version", "UNKNOWN"),
+                }
+                context_map[module["name"]] = context
+                context_map.setdefault(module["service"], context)
         eval_res = evaluate_memory_applicability(
             past_findings=past,
             tenant_id=tid,
@@ -87,6 +100,11 @@ def call_mcp_tool(
             ticket_id=ticket_id,
             input_fingerprint=in_fp,
             active_artifact_map=active_map,
+            requirement_id=arguments.get("requirement_id"),
+            req_version=arguments.get("req_version"),
+            check_id=arguments.get("check_id"),
+            check_version=arguments.get("check_version"),
+            current_context_map=context_map,
         )
         return {"result": eval_res, "trace": trace}
 
@@ -128,6 +146,17 @@ def call_mcp_tool(
             case_id=str(arguments.get("case_id", "MCP-CASE")),
             artifact_sha=str(arguments["artifact_sha"]),
             raw_payload=arguments.get("raw_payload"),
+            tenant_id=tid,
+            service=str(arguments.get("service", "")),
+            input_fingerprint=str(
+                arguments.get("input_fingerprint")
+                or compute_input_fingerprint(
+                    tid,
+                    str(arguments.get("service", "")),
+                    str(arguments.get("case_id", "MCP-CASE")),
+                    arguments.get("raw_payload"),
+                )
+            ),
         )
         return {"result": data, "trace": trace}
 
@@ -166,6 +195,9 @@ def call_mcp_tool(
             check_version=str(arguments.get("check_version", "UNKNOWN")),
             observation_id=str(arguments.get("observation_id", "")),
             run_id=str(arguments.get("run_id", "")),
+            tenant_id=tid,
+            requirement_id=str(arguments.get("requirement_id", "UNKNOWN")),
+            check_id=str(arguments.get("check_id", "UNKNOWN")),
         )
         return {"result": data, "trace": trace}
 

@@ -11,15 +11,20 @@ Implements the AI Judge's Section 03, 04, 05 & 06 Contracts:
 
 from __future__ import annotations
 
+import hashlib
 import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.db import GraphOperationError
 from backend.verifier import (
+    ARTIFACT_VERSIONS_CATALOG,
+    INDEPENDENT_REQUIREMENT_SPECIFICATIONS,
     build_minimum_applicability_fingerprint,
     compute_input_fingerprint,
     execute_sandboxed_Verification_check,
+    register_dynamic_artifact_version,
 )
 
 
@@ -273,7 +278,10 @@ RETURN s.name AS name, s.tier AS tier, s.language AS language, s.repo AS repo, s
 """
     params = {"name": name}
     t0 = time.perf_counter()
-    res = graph.ro_query(cypher, params)
+    try:
+        res = graph.ro_query(cypher, params)
+    except Exception as exc:
+        raise GraphOperationError("resolve_service.read") from exc
     rows = res.result_set
     latency_ms = getattr(res, "run_time_ms", 0.0) or ((time.perf_counter() - t0) * 1000.0)
     trace = _build_trace(
@@ -317,7 +325,9 @@ RETURN f.id AS id, s.name AS service, f.verdict AS verdict, f.text AS text,
        f.input_fingerprint AS input_fingerprint, f.artifact_sha AS artifact_sha,
        f.req_version AS req_version, f.check_version AS check_version,
        f.observation_id AS observation_id, f.run_id AS run_id,
-       f.validity_state AS validity_state, f.superseded_by AS superseded_by
+       f.validity_state AS validity_state, f.superseded_by AS superseded_by,
+       f.tenant_id AS tenant_id, f.requirement_id AS requirement_id,
+       f.check_id AS check_id
 ORDER BY f.at DESC
 LIMIT $limit
 """
@@ -348,6 +358,9 @@ LIMIT $limit
                     "run_id": r[13] or "",
                     "validity_state": r[14] or "VALID",
                     "superseded_by": r[15] if len(r) > 15 and r[15] else "",
+                    "tenant_id": r[16] if len(r) > 16 and r[16] else "UNKNOWN",
+                    "requirement_id": r[17] if len(r) > 17 and r[17] else "UNKNOWN",
+                    "check_id": r[18] if len(r) > 18 and r[18] else "UNKNOWN",
                 }
             )
         else:
@@ -369,6 +382,9 @@ LIMIT $limit
                     "run_id": "",
                     "validity_state": "VALID",
                     "superseded_by": "",
+                    "tenant_id": "UNKNOWN",
+                    "requirement_id": "UNKNOWN",
+                    "check_id": "UNKNOWN",
                 }
             )
 
@@ -392,6 +408,11 @@ def evaluate_memory_applicability(
     ticket_id: Optional[str],
     input_fingerprint: str,
     active_artifact_map: Dict[str, str],
+    requirement_id: Optional[str] = None,
+    req_version: Optional[str] = None,
+    check_id: Optional[str] = None,
+    check_version: Optional[str] = None,
+    current_context_map: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> Dict[str, Any]:
     """
     Implements the AI Judge's Section 05 Reuse Policy:
@@ -401,6 +422,8 @@ def evaluate_memory_applicability(
       DO NOT blindly reuse diagnosis! Treat stored finding as a hypothesis lead only and run distinguishing check.
     - Version mismatch or changed evidence (validity_state == 'STALE_VERSION_MISMATCH' or stored artifact_sha
       differs from current active_artifact_sha): mark stale and re-evaluate.
+    - When current graph data supplies requirement/check identity or version, every
+      stored value must match it before an observation can be reused.
     """
     if not past_findings:
         return {
@@ -410,6 +433,16 @@ def evaluate_memory_applicability(
             "matched_finding": None,
             "stale_findings": [],
             "hypothesis_leads": [],
+            "fingerprint": build_minimum_applicability_fingerprint(
+                tenant_id=tenant_id,
+                service=service,
+                input_fingerprint=input_fingerprint,
+                artifact_sha=active_artifact_map.get(service, "UNKNOWN"),
+                req_version=req_version or "UNKNOWN",
+                check_version=check_version or "UNKNOWN",
+                requirement_id=requirement_id or "UNKNOWN",
+                check_id=check_id or "UNKNOWN",
+            ),
         }
 
     stale_findings: List[Dict[str, Any]] = []
@@ -420,6 +453,12 @@ def evaluate_memory_applicability(
         f_sha = f.get("artifact_sha", "UNKNOWN")
         f_fp = f.get("input_fingerprint", "UNKNOWN")
         rc_node = f.get("root_cause_node") or service
+
+        current_context = (current_context_map or {}).get(rc_node) or (current_context_map or {}).get(service) or {}
+        current_req_id = requirement_id or current_context.get("requirement_id") or ""
+        current_req_version = req_version or current_context.get("requirement_version") or ""
+        current_check_id = check_id or current_context.get("check_id") or ""
+        current_check_version = check_version or current_context.get("check_version") or ""
 
         # Check if the root-cause service's active artifact SHA has changed since this finding was recorded
         current_rc_sha = active_artifact_map.get(rc_node) or active_artifact_map.get(service) or ""
@@ -441,8 +480,44 @@ def evaluate_memory_applicability(
             )
             continue
 
+        identity_pairs = (
+            ("requirement_id", current_req_id, f.get("requirement_id", "UNKNOWN")),
+            ("req_version", current_req_version, f.get("req_version", "UNKNOWN")),
+            ("check_id", current_check_id, f.get("check_id", "UNKNOWN")),
+            ("check_version", current_check_version, f.get("check_version", "UNKNOWN")),
+        )
+        identity_mismatches = [
+            (field, stored, current)
+            for field, current, stored in identity_pairs
+            if current and current != "UNKNOWN" and stored != current
+        ]
+        if identity_mismatches:
+            mismatch_text = ", ".join(
+                f"{field}: stored={stored or 'UNKNOWN'} current={current}"
+                for field, stored, current in identity_mismatches
+            )
+            stale_findings.append(
+                {
+                    **f,
+                    "invalidation_reason": (
+                        f"Stored finding applicability metadata does not match current graph evidence ({mismatch_text})."
+                    ),
+                }
+            )
+            continue
+
         # Version is still valid; now check if input_fingerprint matches!
         if f_fp != "UNKNOWN" and f_fp == input_fingerprint:
+            fingerprint = build_minimum_applicability_fingerprint(
+                tenant_id=tenant_id,
+                service=service,
+                input_fingerprint=input_fingerprint,
+                artifact_sha=f_sha,
+                req_version=f.get("req_version", "UNKNOWN"),
+                check_version=f.get("check_version", "UNKNOWN"),
+                requirement_id=f.get("requirement_id", "UNKNOWN"),
+                check_id=f.get("check_id", "UNKNOWN"),
+            )
             return {
                 "decision": "REUSE_APPLICABLE_OBSERVATION",
                 "can_reuse": True,
@@ -454,6 +529,7 @@ def evaluate_memory_applicability(
                 "matched_finding": f,
                 "stale_findings": stale_findings,
                 "hypothesis_leads": hypothesis_leads,
+                "fingerprint": fingerprint,
             }
 
         # Same service & valid code version, but different ticket input parameters!
@@ -469,6 +545,16 @@ def evaluate_memory_applicability(
         )
 
     if hypothesis_leads:
+        fingerprint = build_minimum_applicability_fingerprint(
+            tenant_id=tenant_id,
+            service=service,
+            input_fingerprint=input_fingerprint,
+            artifact_sha=active_artifact_map.get(service, "UNKNOWN"),
+            req_version=req_version or "UNKNOWN",
+            check_version=check_version or "UNKNOWN",
+            requirement_id=requirement_id or "UNKNOWN",
+            check_id=check_id or "UNKNOWN",
+        )
         return {
             "decision": "HYPOTHESIS_ONLY_DIFFERENT_INPUT",
             "can_reuse": False,
@@ -476,8 +562,19 @@ def evaluate_memory_applicability(
             "matched_finding": None,
             "stale_findings": stale_findings,
             "hypothesis_leads": hypothesis_leads,
+            "fingerprint": fingerprint,
         }
 
+    fingerprint = build_minimum_applicability_fingerprint(
+        tenant_id=tenant_id,
+        service=service,
+        input_fingerprint=input_fingerprint,
+        artifact_sha=active_artifact_map.get(service, "UNKNOWN"),
+        req_version=req_version or "UNKNOWN",
+        check_version=check_version or "UNKNOWN",
+        requirement_id=requirement_id or "UNKNOWN",
+        check_id=check_id or "UNKNOWN",
+    )
     return {
         "decision": "INVALIDATED_STALE_VERSION",
         "can_reuse": False,
@@ -485,6 +582,7 @@ def evaluate_memory_applicability(
         "matched_finding": None,
         "stale_findings": stale_findings,
         "hypothesis_leads": [],
+        "fingerprint": fingerprint,
     }
 
 
@@ -501,7 +599,9 @@ RETURN f.id AS id, s.name AS service, f.verdict AS verdict, f.text AS text,
        f.input_fingerprint AS input_fingerprint, f.artifact_sha AS artifact_sha,
        f.req_version AS req_version, f.check_version AS check_version,
        f.observation_id AS observation_id, f.run_id AS run_id,
-       f.validity_state AS validity_state
+       f.validity_state AS validity_state, f.superseded_by AS superseded_by,
+       f.tenant_id AS tenant_id, f.requirement_id AS requirement_id,
+       f.check_id AS check_id
 ORDER BY f.at DESC
 LIMIT $limit
 """
@@ -524,11 +624,50 @@ LIMIT $limit
                 "observation_id": r[12] if len(r) > 12 else "",
                 "run_id": r[13] if len(r) > 13 else "",
                 "validity_state": r[14] if len(r) > 14 else "VALID",
+                "superseded_by": r[15] if len(r) > 15 else "",
+                "tenant_id": r[16] if len(r) > 16 else "UNKNOWN",
+                "requirement_id": r[17] if len(r) > 17 else "UNKNOWN",
+                "check_id": r[18] if len(r) > 18 else "UNKNOWN",
             }
             for r in res.result_set
         ]
-    except Exception:
-        return []
+    except Exception as exc:
+        raise GraphOperationError("recall_all_tenant_findings.read") from exc
+
+
+def recall_all_tenant_observations(graph: Any, limit: int = 50) -> List[Dict[str, Any]]:
+    """Fetch persisted sandbox observations for the evidence graph view."""
+    if hasattr(graph, "_dataset"):
+        return list(graph._dataset.get("observations", []))[:limit]
+    cypher = """
+MATCH (obs:Observation)
+RETURN obs.observation_id AS observation_id, obs.tenant_id AS tenant_id,
+       obs.service AS service, obs.run_id AS run_id, obs.check_id AS check_id,
+       obs.check_version AS check_version, obs.case_id AS case_id,
+       obs.target_module AS target_module, obs.requirement_id AS requirement_id,
+       obs.requirement_version AS requirement_version, obs.artifact_sha AS artifact_sha,
+       obs.artifact_version AS artifact_version, obs.expected_value AS expected_value,
+       obs.observed_value AS observed_value, obs.status AS status,
+       obs.violation_reproduced AS violation_reproduced, obs.at AS at
+ORDER BY obs.at DESC
+LIMIT $limit
+"""
+    try:
+        res = graph.ro_query(cypher, {"limit": int(limit)})
+        return [
+            {
+                "observation_id": r[0], "tenant_id": r[1], "service": r[2],
+                "run_id": r[3], "check_id": r[4], "check_version": r[5],
+                "case_id": r[6], "target_module": r[7], "requirement_id": r[8],
+                "requirement_version": r[9], "artifact_sha": r[10],
+                "artifact_version": r[11], "expected_value": r[12],
+                "observed_value": r[13], "status": r[14],
+                "violation_reproduced": bool(r[15]), "at": r[16],
+            }
+            for r in res.result_set
+        ]
+    except Exception as exc:
+        raise GraphOperationError("recall_all_tenant_observations.read") from exc
 
 
 # ============================================================================
@@ -560,7 +699,10 @@ RETURN i.id AS ticket_id, i.title AS title, i.client_name AS client_name,
 """
     params = {"ticket_id": ticket_id}
     t0 = time.perf_counter()
-    res = graph.ro_query(cypher, params)
+    try:
+        res = graph.ro_query(cypher, params)
+    except Exception as exc:
+        raise GraphOperationError("inspect_ticket_and_prd_lineage.read") from exc
     rows = res.result_set
     latency_ms = getattr(res, "run_time_ms", 0.0) or ((time.perf_counter() - t0) * 1000.0)
 
@@ -637,7 +779,10 @@ ORDER BY hops ASC, dependency ASC
 """
     params = {"service": service, "depth": capped_depth}
     t0 = time.perf_counter()
-    res = graph.ro_query(cypher, params)
+    try:
+        res = graph.ro_query(cypher, params)
+    except Exception as exc:
+        raise GraphOperationError("trace_blast_radius.read") from exc
     rows = res.result_set
     latency_ms = getattr(res, "run_time_ms", 0.0) or ((time.perf_counter() - t0) * 1000.0)
 
@@ -696,7 +841,10 @@ ORDER BY impl.compliant ASC, ch.hours_ago ASC, hops ASC
 """
     params = {"service": service, "depth": capped_depth, "hours": int(hours)}
     t0 = time.perf_counter()
-    res = graph.ro_query(cypher, params)
+    try:
+        res = graph.ro_query(cypher, params)
+    except Exception as exc:
+        raise GraphOperationError("inspect_recent_patches.read") from exc
     rows = res.result_set
     latency_ms = getattr(res, "run_time_ms", 0.0) or ((time.perf_counter() - t0) * 1000.0)
 
@@ -764,7 +912,10 @@ RETURN chk.id AS check_id, chk.check_version AS check_version,
 """
     params = {"service": service, "module": module}
     t0 = time.perf_counter()
-    res = graph.ro_query(cypher, params)
+    try:
+        res = graph.ro_query(cypher, params)
+    except Exception as exc:
+        raise GraphOperationError("list_relevant_checks.read") from exc
     rows = res.result_set
     latency_ms = getattr(res, "run_time_ms", 0.0) or ((time.perf_counter() - t0) * 1000.0)
 
@@ -794,29 +945,181 @@ RETURN chk.id AS check_id, chk.check_version AS check_version,
     return checks, trace
 
 
+def _validate_check_artifact(graph: Any, check_id: str, artifact_sha: str) -> Dict[str, Any]:
+    """Validate that a check and artifact are both graph-backed and compatible."""
+    spec = INDEPENDENT_REQUIREMENT_SPECIFICATIONS.get(check_id)
+    if spec is None:
+        raise ValueError(f"Unknown verification check '{check_id}'.")
+    sha = (artifact_sha or "").strip()
+    if not sha:
+        raise ValueError("An artifact SHA is required for verification.")
+
+    if hasattr(graph, "_dataset"):
+        dataset = graph._dataset
+        check = next(
+            (item for item in dataset.get("check_definitions", []) if item.get("check_id") == check_id),
+            None,
+        )
+        artifact = next(
+            (item for item in dataset.get("artifact_versions", []) if item.get("git_sha") == sha),
+            None,
+        )
+        if check is None:
+            raise ValueError(f"Verification check '{check_id}' is not available in this graph.")
+        if artifact is None:
+            raise ValueError(f"Artifact '{sha}' is not available in this graph.")
+        if artifact.get("module") != spec["target_module"] or artifact.get("service") != spec["target_service"]:
+            raise ValueError(
+                f"Artifact '{sha}' is not compatible with verification check '{check_id}'."
+            )
+        if sha not in ARTIFACT_VERSIONS_CATALOG:
+            register_dynamic_artifact_version(
+                git_sha=sha,
+                module=artifact.get("module", spec["target_module"]),
+                service=artifact.get("service", spec["target_service"]),
+                version_tag=artifact.get("version_tag", "dynamic-artifact"),
+                code_hash=artifact.get("code_hash", "sha256:unknown"),
+                faulty=bool(artifact.get("faulty", True)),
+            )
+        return artifact
+
+    cypher = """
+MATCH (s:Service)-[:IMPLEMENTED_BY]->(c:Code_Module)-[:VERIFIED_BY]->(chk:CheckDefinition {id: $check_id})
+OPTIONAL MATCH (c)-[:HAS_ARTIFACT]->(av:ArtifactVersion {git_sha: $artifact_sha})
+RETURN c.name AS module, s.name AS service, chk.id AS check_id,
+       av.git_sha AS artifact_sha, av.version_tag AS version_tag,
+       av.code_hash AS code_hash
+"""
+    try:
+        res = graph.ro_query(cypher, {"check_id": check_id, "artifact_sha": sha})
+    except Exception as exc:
+        raise GraphOperationError("validate_check_artifact.read") from exc
+    matching = [row for row in res.result_set if row[3] == sha]
+    if not matching:
+        raise ValueError(
+            f"Check '{check_id}' or artifact '{sha}' is not available as a compatible graph mapping."
+        )
+    row = matching[0]
+    artifact = {
+        "module": row[0],
+        "service": row[1],
+        "git_sha": row[3],
+        "version_tag": row[4] or "dynamic-artifact",
+        "code_hash": row[5] or "sha256:unknown",
+    }
+    if sha not in ARTIFACT_VERSIONS_CATALOG:
+        register_dynamic_artifact_version(
+            git_sha=sha,
+            module=artifact["module"],
+            service=artifact["service"],
+            version_tag=artifact["version_tag"],
+            code_hash=artifact["code_hash"],
+            faulty=True,
+        )
+    return artifact
+
+
+def _validate_check_service(graph: Any, service: str) -> None:
+    """Reject a check request carrying an unknown provenance service."""
+    svc = (service or "").strip()
+    if not svc or svc == "UNKNOWN":
+        return
+    if hasattr(graph, "_dataset"):
+        if not any(item.get("name") == svc for item in graph._dataset.get("services", [])):
+            raise ValueError(f"Unknown service '{svc}' for verification.")
+        return
+    try:
+        res = graph.ro_query(
+            "MATCH (s:Service {name: $service}) RETURN s.name AS service",
+            {"service": svc},
+        )
+    except Exception as exc:
+        raise GraphOperationError("validate_check_service.read") from exc
+    if not res.result_set:
+        raise ValueError(f"Unknown service '{svc}' for verification.")
+
+
+def _validate_check_case(graph: Any, case_id: str, service: str) -> None:
+    """Validate ticket-shaped check cases while retaining internal ad-hoc cases."""
+    case = (case_id or "").strip()
+    if not (case.upper().startswith("TICKET-") or case.upper().startswith("NEXUS-")):
+        return
+    svc = (service or "").strip()
+    if hasattr(graph, "_dataset"):
+        issue = next(
+            (item for item in graph._dataset.get("client_issues", []) if item.get("id") == case),
+            None,
+        )
+        if issue is None:
+            raise ValueError(f"Unknown ticket '{case}' for verification.")
+        if svc and svc != "UNKNOWN" and issue.get("reported_service") != svc:
+            raise ValueError(
+                f"Ticket '{case}' belongs to service '{issue.get('reported_service')}', not '{svc}'."
+            )
+        return
+    try:
+        res = graph.ro_query(
+            """
+            MATCH (i:Client_Issue {id: $case_id})-[:REPORTS_ON]->(s:Service)
+            RETURN i.id AS ticket_id, s.name AS service
+            """,
+            {"case_id": case},
+        )
+    except Exception as exc:
+        raise GraphOperationError("validate_check_case.read") from exc
+    if not res.result_set:
+        raise ValueError(f"Unknown ticket '{case}' for verification.")
+    if svc and svc != "UNKNOWN" and res.result_set[0][1] != svc:
+        raise ValueError(
+            f"Ticket '{case}' belongs to service '{res.result_set[0][1]}', not '{svc}'."
+        )
+
+
 def run_approved_check(
     graph: Any,
     check_id: str,
     case_id: str,
     artifact_sha: str,
     raw_payload: Optional[str] = None,
+    tenant_id: str = "UNKNOWN",
+    service: str = "",
+    input_fingerprint: str = "",
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     Executes the allowlisted `check_id` inside `backend/verifier.py` against `artifact_sha`
     and persists an immutable `(:Observation)` node in FalkorDB.
     """
+    _validate_check_service(graph, service)
+    _validate_check_case(graph, case_id, service)
+    _validate_check_artifact(graph, check_id, artifact_sha)
     obs = execute_sandboxed_Verification_check(
         check_id=check_id,
         case_id=case_id,
         artifact_sha=artifact_sha,
         raw_payload=raw_payload,
     )
+    if obs.get("status") == "ERROR":
+        raise ValueError(obs.get("error") or f"Verification check '{check_id}' was rejected.")
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     obs["at"] = now_iso
+    obs["tenant_id"] = tenant_id or "UNKNOWN"
+    obs["service"] = service or obs.get("target_service", "UNKNOWN")
+    obs["input_fingerprint"] = input_fingerprint or compute_input_fingerprint(
+        tenant_id=obs["tenant_id"],
+        service=obs["service"],
+        ticket_id=case_id,
+        payload_str=raw_payload,
+    )
 
     cypher = """
 MATCH (c:Code_Module {name: $target_module})
+OPTIONAL MATCH (chk:CheckDefinition {id: $check_id})
+OPTIONAL MATCH (r:Requirement {id: $requirement_id})
+OPTIONAL MATCH (av:ArtifactVersion {git_sha: $artifact_sha})
 CREATE (obs:Observation {
+    tenant_id: $tenant_id,
+    service: $service,
+    input_fingerprint: $input_fingerprint,
     observation_id: $observation_id,
     run_id: $run_id,
     check_id: $check_id,
@@ -825,6 +1128,8 @@ CREATE (obs:Observation {
     artifact_sha: $artifact_sha,
     artifact_version: $artifact_version,
     code_hash: $code_hash,
+    requirement_id: $requirement_id,
+    requirement_version: $requirement_version,
     expected_value: $expected_value,
     observed_value: $observed_value,
     status: $status,
@@ -832,12 +1137,18 @@ CREATE (obs:Observation {
     at: $at
 })
 CREATE (obs)-[:OBSERVED_ON]->(c)
+FOREACH (_ IN CASE WHEN chk IS NULL THEN [] ELSE [1] END |
+    CREATE (obs)-[:EXECUTED_CHECK]->(chk))
+FOREACH (_ IN CASE WHEN r IS NULL THEN [] ELSE [1] END |
+    CREATE (obs)-[:TESTED_REQUIREMENT]->(r))
+FOREACH (_ IN CASE WHEN av IS NULL THEN [] ELSE [1] END |
+    CREATE (obs)-[:USED_ARTIFACT]->(av))
 RETURN obs.observation_id AS observation_id, obs.run_id AS run_id
 """
     try:
         graph.query(cypher, obs)
-    except Exception:
-        pass
+    except Exception as exc:
+        raise GraphOperationError("run_approved_check.persist_observation") from exc
 
     trace = _build_trace(
         tool_name="run_approved_check",
@@ -887,6 +1198,7 @@ RETURN [n IN nodes(path) | n.name] AS hops, pathWeight AS weight
 """
     params = {"source": source_service, "target": target_service}
     t0 = time.perf_counter()
+    used_fallback = False
     try:
         res = graph.ro_query(cypher, params)
         rows = res.result_set
@@ -897,9 +1209,13 @@ MATCH (a:Service {name: $source}), (b:Service {name: $target})
 MATCH path = shortestPath((a)-[:DEPENDS_ON*1..6]->(b))
 RETURN [n IN nodes(path) | n.name] AS hops, length(path) AS weight
 """
-        res = graph.ro_query(fallback_cypher, params)
-        rows = res.result_set
-        latency_ms = (time.perf_counter() - t0) * 1000.0
+        try:
+            res = graph.ro_query(fallback_cypher, params)
+            rows = res.result_set
+            latency_ms = (time.perf_counter() - t0) * 1000.0
+            used_fallback = True
+        except Exception as exc:
+            raise GraphOperationError("shortest_dependency_path.algorithm_and_fallback") from exc
 
     trace = _build_trace(
         tool_name="shortest_dependency_path",
@@ -909,7 +1225,11 @@ RETURN [n IN nodes(path) | n.name] AS hops, length(path) AS weight
         cypher=cypher,
         latency_ms=latency_ms,
         row_count=len(rows),
-        explain_plan=_safe_explain(graph, cypher),
+        explain_plan=(
+            ["FallbackAlgorithm | shortestPath() used after algo.SPpaths failed"]
+            if used_fallback
+            else _safe_explain(graph, cypher)
+        ),
     )
     if not rows:
         return None, trace
@@ -951,8 +1271,11 @@ LIMIT 1
 """
     params = {"service": service}
     t0 = time.perf_counter()
-    pr_res = graph.ro_query(pagerank_cypher)
-    oc_res = graph.ro_query(oncall_cypher, params)
+    try:
+        pr_res = graph.ro_query(pagerank_cypher)
+        oc_res = graph.ro_query(oncall_cypher, params)
+    except Exception as exc:
+        raise GraphOperationError("service_criticality_pagerank.algorithm") from exc
     latency_ms = (
         (getattr(pr_res, "run_time_ms", 0.0) + getattr(oc_res, "run_time_ms", 0.0))
         or ((time.perf_counter() - t0) * 1000.0)
@@ -1032,13 +1355,13 @@ ORDER BY score DESC
     try:
         wcc_res = graph.ro_query(wcc_cypher)
         wcc_rows = wcc_res.result_set
-    except Exception:
-        wcc_rows = []
+    except Exception as exc:
+        raise GraphOperationError("analyze_topology_islands_and_bridges.wcc") from exc
     try:
         bet_res = graph.ro_query(bet_cypher)
         bet_rows = bet_res.result_set
-    except Exception:
-        bet_rows = []
+    except Exception as exc:
+        raise GraphOperationError("analyze_topology_islands_and_bridges.betweenness") from exc
 
     latency_ms = (time.perf_counter() - t0) * 1000.0
 
@@ -1098,6 +1421,9 @@ def record_finding(
     observation_id: str = "",
     run_id: str = "",
     validity_state: str = "VALID",
+    tenant_id: str = "UNKNOWN",
+    requirement_id: str = "UNKNOWN",
+    check_id: str = "UNKNOWN",
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     Write resolved root-cause back to FalkorDB as a persistent `(:Finding)` node
@@ -1110,6 +1436,8 @@ def record_finding(
 MATCH (s:Service {name: $service})
 CREATE (f:Finding {
     id: $id,
+    tenant_id: $tenant_id,
+    service: $service,
     verdict: $verdict,
     text: $text,
     root_cause_node: $root_cause_node,
@@ -1118,17 +1446,36 @@ CREATE (f:Finding {
     session: $session,
     input_fingerprint: $input_fingerprint,
     artifact_sha: $artifact_sha,
+    requirement_id: $requirement_id,
     req_version: $req_version,
+    check_id: $check_id,
     check_version: $check_version,
     observation_id: $observation_id,
     run_id: $run_id,
     validity_state: $validity_state
 })
 CREATE (f)-[:ABOUT]->(s)
+WITH f
+OPTIONAL MATCH (obs:Observation {observation_id: $observation_id})
+FOREACH (_ IN CASE WHEN obs IS NULL THEN [] ELSE [1] END |
+    CREATE (f)-[:EVIDENCED_BY]->(obs))
+WITH f
+OPTIONAL MATCH (chk:CheckDefinition {id: $check_id})
+FOREACH (_ IN CASE WHEN chk IS NULL THEN [] ELSE [1] END |
+    CREATE (f)-[:USES_CHECK]->(chk))
+WITH f
+OPTIONAL MATCH (r:Requirement {id: $requirement_id})
+FOREACH (_ IN CASE WHEN r IS NULL THEN [] ELSE [1] END |
+    CREATE (f)-[:EVIDENCES_REQUIREMENT]->(r))
+WITH f
+OPTIONAL MATCH (av:ArtifactVersion {git_sha: $artifact_sha})
+FOREACH (_ IN CASE WHEN av IS NULL THEN [] ELSE [1] END |
+    CREATE (f)-[:ABOUT_ARTIFACT]->(av))
 RETURN f.id AS id, f.at AS at
 """
     params = {
         "id": finding_id,
+        "tenant_id": tenant_id or "UNKNOWN",
         "service": service,
         "verdict": verdict,
         "text": text,
@@ -1138,7 +1485,9 @@ RETURN f.id AS id, f.at AS at
         "session": session,
         "input_fingerprint": input_fingerprint or "UNKNOWN",
         "artifact_sha": artifact_sha or "UNKNOWN",
+        "requirement_id": requirement_id or "UNKNOWN",
         "req_version": req_version or "UNKNOWN",
+        "check_id": check_id or "UNKNOWN",
         "check_version": check_version or "UNKNOWN",
         "observation_id": observation_id or "",
         "run_id": run_id or "",
@@ -1154,6 +1503,10 @@ RETURN f.id AS id, f.at AS at
                     ticket_id: $ticket_id,
                     input_fingerprint: $input_fingerprint,
                     artifact_sha: $artifact_sha,
+                    requirement_id: $requirement_id,
+                    req_version: $req_version,
+                    check_id: $check_id,
+                    check_version: $check_version,
                     validity_state: 'VALID'
                 })-[:ABOUT]->(:Service {name: $service})
                 DETACH DELETE old
@@ -1163,11 +1516,18 @@ RETURN f.id AS id, f.at AS at
                     "ticket_id": ticket_id or "",
                     "input_fingerprint": input_fingerprint or "UNKNOWN",
                     "artifact_sha": artifact_sha or "UNKNOWN",
+                    "requirement_id": requirement_id or "UNKNOWN",
+                    "req_version": req_version or "UNKNOWN",
+                    "check_id": check_id or "UNKNOWN",
+                    "check_version": check_version or "UNKNOWN",
                 },
             )
-        except Exception:
-            pass
-    res = graph.query(cypher, params)
+        except Exception as exc:
+            raise GraphOperationError("record_finding.deduplicate") from exc
+    try:
+        res = graph.query(cypher, params)
+    except Exception as exc:
+        raise GraphOperationError("record_finding.persist_finding") from exc
     latency_ms = getattr(res, "run_time_ms", 0.0) or ((time.perf_counter() - t0) * 1000.0)
 
     trace = _build_trace(
@@ -1190,6 +1550,7 @@ RETURN f.id AS id, f.at AS at
     )
     return {
         "id": finding_id,
+        "tenant_id": tenant_id or "UNKNOWN",
         "service": service,
         "verdict": verdict,
         "text": text,
@@ -1199,7 +1560,9 @@ RETURN f.id AS id, f.at AS at
         "session": session,
         "input_fingerprint": input_fingerprint,
         "artifact_sha": artifact_sha,
+        "requirement_id": requirement_id,
         "req_version": req_version,
+        "check_id": check_id,
         "check_version": check_version,
         "observation_id": observation_id,
         "run_id": run_id,
@@ -1210,8 +1573,52 @@ RETURN f.id AS id, f.at AS at
 # ============================================================================
 # Simulated Remediation Action: Switch Active ArtifactVersion & Re-Verify
 # ============================================================================
+def _validate_remediation_target(graph: Any, service: str, sha: str) -> None:
+    """Reject unknown service/change/artifact combinations before mutation."""
+    svc = (service or "").strip()
+    change_sha = (sha or "").strip()
+    if not svc or not change_sha:
+        raise ValueError("Remediation requires both a service and change SHA.")
+
+    if hasattr(graph, "_dataset"):
+        dataset = graph._dataset
+        if not any(item.get("name") == svc for item in dataset.get("services", [])):
+            raise ValueError(f"Unknown service '{svc}'.")
+        change = next((item for item in dataset.get("changes", []) if item.get("sha") == change_sha), None)
+        if change is None:
+            raise ValueError(f"Unknown change '{change_sha}'.")
+        if change.get("deployed_service") != svc:
+            raise ValueError(f"Change '{change_sha}' is not deployed to service '{svc}'.")
+        module = change.get("modified_module")
+        artifact = next(
+            (
+                item
+                for item in dataset.get("artifact_versions", [])
+                if item.get("git_sha") == change_sha and item.get("module") == module
+            ),
+            None,
+        )
+        if artifact is None:
+            raise ValueError(f"Artifact '{change_sha}' is not available for change '{change_sha}'.")
+        return
+
+    cypher = """
+MATCH (s:Service {name: $service})<-[:DEPLOYED_TO]-(ch:Change {sha: $sha})-[:MODIFIED]->(c:Code_Module)
+MATCH (c)-[:HAS_ARTIFACT]->(av:ArtifactVersion {git_sha: $sha})
+RETURN s.name AS service, ch.sha AS change_sha, c.name AS module, av.git_sha AS artifact_sha
+"""
+    try:
+        res = graph.ro_query(cypher, {"service": svc, "sha": change_sha})
+    except Exception as exc:
+        raise GraphOperationError("validate_remediation_target.read") from exc
+    if not res.result_set:
+        raise ValueError(
+            f"Unknown remediation target: service '{svc}', change '{change_sha}', or its artifact is not graph-backed."
+        )
+
+
 def apply_hotfix_remediation(
-    graph: Any, service: str, sha: str = "9f82d1a"
+    graph: Any, service: str, sha: str = "9f82d1a", tenant_id: str = "UNKNOWN"
 ) -> Dict[str, Any]:
     """
     Simulated Sandbox Remediation & Selective Memory Invalidation (Judge Sections 04 & 05):
@@ -1221,6 +1628,7 @@ def apply_hotfix_remediation(
     3. Executes the mapped verification check (`run_approved_check`) against the newly activated
        clean artifact to prove that code execution now passes (`expected == observed`).
     """
+    _validate_remediation_target(graph, service, sha)
     clean_sha = "55a19c2" if service == "inventory-reservation-engine" or sha == "88d12f0" else (
         "2d88a10" if service == "tax-ledger-adapter" else "7c31b09"
     )
@@ -1229,6 +1637,9 @@ def apply_hotfix_remediation(
         if service == "inventory-reservation-engine"
         else ("CHK-TAX-ROUNDING" if service == "tax-ledger-adapter" else "CHK-PRORATION-30-360")
     )
+    clean_artifact = ARTIFACT_VERSIONS_CATALOG.get(clean_sha)
+    if clean_artifact is None or clean_artifact.get("service") != service:
+        raise ValueError(f"No compatible clean artifact is configured for service '{service}'.")
     hotfix_sha = clean_sha
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -1248,7 +1659,14 @@ RETURN c.name AS module, r.id AS req_id
         "at": now_iso,
     }
     t0 = time.perf_counter()
-    graph.query(cypher, params)
+    try:
+        mutation_res = graph.query(cypher, params)
+    except Exception as exc:
+        raise GraphOperationError("apply_hotfix_remediation.persist_rollback") from exc
+    if not mutation_res.result_set:
+        raise ValueError(
+            f"Remediation target service '{service}' and change '{sha}' could not be mutated."
+        )
 
     # Selective invalidation on live FalkorDB (InMemoryGraph handles this inside _execute_write)
     if not hasattr(graph, "_dataset"):
@@ -1262,8 +1680,8 @@ RETURN c.name AS module, r.id AS req_id
                 """,
                 {"sha": sha, "service": service, "clean_artifact_sha": clean_sha},
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            raise GraphOperationError("apply_hotfix_remediation.invalidate_findings") from exc
 
     # Run the actual sandbox verification check on the restored artifact to prove recovery!
     verification_obs, _ = run_approved_check(
@@ -1272,6 +1690,8 @@ RETURN c.name AS module, r.id AS req_id
         case_id=f"REMEDIATE-{sha}",
         artifact_sha=clean_sha,
         raw_payload='{"upgrade_from":"BASIC_30","upgrade_to":"ENT_90","cycle_day":15,"cycle_length":30}',
+        tenant_id=tenant_id,
+        service=service,
     )
     elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
 
@@ -1292,11 +1712,75 @@ RETURN c.name AS module, r.id AS req_id
 # ============================================================================
 # Simulated Chaos Action: Inject Faulty ArtifactVersion & Mark Prior Memory Stale
 # ============================================================================
+def _resolve_fault_target(graph: Any, service: str) -> Dict[str, str]:
+    """Resolve the injectable module/check instead of fabricating fallback IDs."""
+    svc = (service or "").strip()
+    if not svc:
+        raise ValueError("Fault injection requires a service.")
+
+    if hasattr(graph, "_dataset"):
+        dataset = graph._dataset
+        if not any(item.get("name") == svc for item in dataset.get("services", [])):
+            raise ValueError(f"Unknown service '{svc}'.")
+        module = next(
+            (
+                item
+                for item in dataset.get("code_modules", [])
+                if item.get("service") == svc and item.get("check_id")
+            ),
+            None,
+        )
+        if module is None:
+            raise ValueError(f"Service '{svc}' has no code module available for fault injection.")
+        check_id = module.get("check_id") or ""
+        check = next(
+            (item for item in dataset.get("check_definitions", []) if item.get("check_id") == check_id),
+            None,
+        )
+        if not check_id or check is None or check_id not in INDEPENDENT_REQUIREMENT_SPECIFICATIONS:
+            raise ValueError(f"Service '{svc}' has no supported verification check for fault injection.")
+        if check_id != "CHK-TAX-ROUNDING":
+            raise ValueError(
+                f"Fault injection is not supported for service '{svc}' because its check fixture is not a tax fault fixture."
+            )
+        return {
+            "module": module["name"],
+            "check_id": check_id,
+            "requirement_id": check.get("requirement_id", ""),
+            "active_artifact_sha": module.get("active_artifact_sha", ""),
+        }
+
+    cypher = """
+MATCH (s:Service {name: $service})-[:IMPLEMENTED_BY]->(c:Code_Module)-[:VERIFIED_BY]->(chk:CheckDefinition)
+RETURN c.name AS module, chk.id AS check_id, chk.requirement_id AS requirement_id,
+       c.active_artifact_sha AS active_artifact_sha
+LIMIT 1
+"""
+    try:
+        res = graph.ro_query(cypher, {"service": svc})
+    except Exception as exc:
+        raise GraphOperationError("resolve_fault_target.read") from exc
+    if not res.result_set:
+        raise ValueError(f"Service '{svc}' is unknown or has no supported verification check for fault injection.")
+    row = res.result_set[0]
+    if row[1] != "CHK-TAX-ROUNDING":
+        raise ValueError(
+            f"Fault injection is not supported for service '{svc}' because its check fixture is not a tax fault fixture."
+        )
+    return {
+        "module": row[0],
+        "check_id": row[1],
+        "requirement_id": row[2] or "",
+        "active_artifact_sha": row[3] or "",
+    }
+
+
 def inject_live_fault(
     graph: Any,
     service: str = "tax-ledger-adapter",
     author: str = "@chaos-bot",
     summary: str = "feat(tax): bypass regional VAT rounding cache on multi-hop invoices",
+    tenant_id: str = "UNKNOWN",
 ) -> Dict[str, Any]:
     """
     Simulated Chaos Fault Injection (`graph.query()`):
@@ -1304,6 +1788,7 @@ def inject_live_fault(
     findings `STALE_VERSION_MISMATCH` without deleting history, and executes the sandboxed
     verification check to confirm the newly introduced violation.
     """
+    target = _resolve_fault_target(graph, service)
     fault_sha = f"ch{uuid.uuid4().hex[:5]}"
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     patch_version = f"Patch-v9.{uuid.uuid4().hex[:2].upper()}-SIM"
@@ -1311,6 +1796,8 @@ def inject_live_fault(
         "- BigDecimal vat = subtotal.multiply(rate).setScale(2, RoundingMode.HALF_EVEN);\n"
         "+ BigDecimal vat = subtotal.multiply(rate).add(new BigDecimal(\"0.04\")).setScale(2, RoundingMode.CEILING);"
     )
+    version_tag = f"v9.9.0-chaos-fault ({patch_version})"
+    code_hash = f"sha256:{hashlib.sha256((diff_snippet + fault_sha).encode('utf-8')).hexdigest()[:16]}"
     cypher = """
 MATCH (s:Service {name: $service})-[:IMPLEMENTED_BY]->(c:Code_Module)-[impl:IMPLEMENTS]->(r:Requirement)
 SET impl.compliant = false,
@@ -1328,6 +1815,16 @@ CREATE (ch:Change {
 })
 CREATE (ch)-[:MODIFIED]->(c)
 CREATE (ch)-[:DEPLOYED_TO]->(s)
+CREATE (av:ArtifactVersion {
+    id: $artifact_id,
+    module: c.name,
+    service: s.name,
+    version_tag: $artifact_version,
+    git_sha: $sha,
+    code_hash: $code_hash
+})
+CREATE (c)-[:HAS_VERSION]->(av)
+CREATE (c)-[:HAS_ARTIFACT]->(av)
 RETURN c.name AS module, r.id AS req_id
 """
     params = {
@@ -1339,9 +1836,26 @@ RETURN c.name AS module, r.id AS req_id
         "at": now_iso,
         "author": author,
         "note": f"SIMULATED FAULT injected via {patch_version} (sha:{fault_sha}) on {service}",
+        "artifact_id": f"ART-{service.upper()}-{fault_sha}",
+        "artifact_version": version_tag,
+        "code_hash": code_hash,
     }
     t0 = time.perf_counter()
-    res = graph.query(cypher, params)
+    try:
+        res = graph.query(cypher, params)
+    except Exception as exc:
+        raise GraphOperationError("inject_live_fault.persist_change_and_artifact") from exc
+    if not res.result_set or not res.result_set[0] or not res.result_set[0][0]:
+        raise GraphOperationError("inject_live_fault.persist_change_and_artifact")
+    register_dynamic_artifact_version(
+        git_sha=fault_sha,
+        module=target["module"],
+        service=service,
+        version_tag=version_tag,
+        code_hash=code_hash,
+        source_snippet=diff_snippet,
+        faulty=True,
+    )
     if not hasattr(graph, "_dataset"):
         try:
             graph.query(
@@ -1353,12 +1867,12 @@ RETURN c.name AS module, r.id AS req_id
                 """,
                 {"service": service, "sha": fault_sha},
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            raise GraphOperationError("inject_live_fault.invalidate_findings") from exc
 
     elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
-    mod_name = res.result_set[0][0] if res.result_set and res.result_set[0] else "TaxLedgerSettlementAdapter.java"
-    req_id = res.result_set[0][1] if res.result_set and res.result_set[0] and len(res.result_set[0]) > 1 else "SRD-TAX-401"
+    mod_name = res.result_set[0][0]
+    req_id = res.result_set[0][1] if len(res.result_set[0]) > 1 else target["requirement_id"]
 
     return {
         "status": "fault_injected",

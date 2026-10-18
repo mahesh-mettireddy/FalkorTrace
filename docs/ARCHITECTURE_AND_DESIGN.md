@@ -13,7 +13,7 @@ Enterprise incident and SDLC triage is fundamentally a **connected-data and exec
 
 1. **Multi-Hop Candidate Narrowing (Track 01):** *If the top-level API (`billing-edge-api`) looks clean at Depth 1, which downstream services (`subscription-service` $\rightarrow$ `invoice-orchestrator` $\rightarrow$ `proration-engine`) and recent commits (`:Change`) sit in the 1..4 hop blast radius?*
 2. **Graph-Guided Verification Check Selection & Execution (Track 01 & 03):** *Which allowlisted verification check (`(:CheckDefinition)-[:TARGETS]->(:Code_Module)`) tests the candidate module against its independent requirement specification (`(:CheckDefinition)-[:VERIFIES]->(:Requirement)`), and does executing that check against the active `ArtifactVersion` (`sha:9f82d1a` vs `sha:7c31b09`) reproduce the failure (`expected=$30.00` vs `observed=$45.00`)?*
-3. **Version-Aware Investigation Memory & Applicability Gate (Track 02):** *Have we verified this exact `(tenant_id, service, input_fingerprint, artifact_sha, req_version, check_version)` before? If another ticket arrives on the same service with different input parameters (`TICKET-4905` Day 29 boundary or `TICKET-4906` invalid plan code), or if the code artifact was rolled back (`sha:7c31b09`), how do we prevent stale or false diagnosis reuse while preserving historical audit trails?*
+3. **Version-Aware Investigation Memory & Applicability Gate (Track 02):** *Have we verified this exact `(tenant_id, service, input_fingerprint, artifact_sha, req_version, check_version)` before? If another supported ticket arrives on the same service with different input parameters (`TICKET-4905` Day 29 boundary), if an invalid-plan ticket has no mapped executable check, or if the code artifact was rolled back (`sha:7c31b09`), how do we prevent stale or false diagnosis reuse while preserving historical audit trails?*
 4. **Payload Schema Validation vs. Contract Behavior (Track 01 & 03):** *Did the client send a malformed webhook payload (`DATA_PAYLOAD_ISSUE` verified by `CHK-WEBHOOK-ISO4217`), or is the system working strictly as designed (`WORKING_AS_PER_PRD` verified by `CHK-DISCOUNT-SEAT-50`)?*
 5. **Ownership & Structural Criticality (Track 01 & 03):** *Which service in the dependency chain carries the highest structural load (`algo.pageRank` & `algo.betweenness`), and which on-call engineer (`[:ONCALL_FOR]`) and subject-matter expert (`[:WORKED_ON]`) must be paged right now?*
 
@@ -107,6 +107,9 @@ flowchart TB
 (chk:CheckDefinition)-[:VERIFIES]->(r:Requirement)
 (c:Code_Module)-[:HAS_ARTIFACT]->(av:ArtifactVersion)
 (obs:Observation)-[:OBSERVED_ON]->(c:Code_Module)
+(obs:Observation)-[:EXECUTED_CHECK]->(chk:CheckDefinition)
+(obs:Observation)-[:TESTED_REQUIREMENT]->(r:Requirement)
+(obs:Observation)-[:USED_ARTIFACT]->(av:ArtifactVersion)
 (ch:Change)-[:MODIFIED]->(c:Code_Module)
 (ch:Change)-[:DEPLOYED_TO]->(s:Service)
 (t:Team)-[:OWNS]->(s:Service)
@@ -114,6 +117,10 @@ flowchart TB
 (p:Person)-[:ONCALL_FOR {from: '...', to: '...'}]->(t:Team)
 (p:Person)-[:WORKED_ON {commits: 42}]->(s:Service)
 (f:Finding)-[:ABOUT]->(s:Service)
+(f:Finding)-[:EVIDENCED_BY]->(obs:Observation)
+(f:Finding)-[:USES_CHECK]->(chk:CheckDefinition)
+(f:Finding)-[:EVIDENCES_REQUIREMENT]->(r:Requirement)
+(f:Finding)-[:ABOUT_ARTIFACT]->(av:ArtifactVersion)
 (rb:Runbook)-[:REMEDIATES]->(r:Requirement)
 ```
 
@@ -143,10 +150,10 @@ sequenceDiagram
         Mem->>DB: ro_query: recall_past_findings(service)
         Mem->>Mem: evaluate_memory_applicability(input_fp, active_artifact_sha, req_version)
         alt Exact Fingerprint & Active Artifact Match (REUSE_APPLICABLE_OBSERVATION)
-            Mem-->>User: Outcome: answered_from_memory (~1ms verified reuse)
+            Mem-->>User: Outcome: answered_from_memory (no sandbox re-run; request latency is deployment-dependent)
         else Different Input (HYPOTHESIS_ONLY) or Stale SHA (INVALIDATED_STALE_VERSION) or Fresh
             alt Invalid Client Payload Detected Locally
-                Mem->>Ver: Dynamic Branch: run_approved_check(CHK-WEBHOOK-ISO4217 / CHK-PRORATION-30-360)
+                Mem->>Ver: Dynamic Branch: run_approved_check(mapped allowlisted check)
                 Ver->>DB: query: record_finding(DATA_PAYLOAD_ISSUE, fingerprint)
             else Multi-Hop Investigation Required
                 Mem->>Topo: ro_query: trace_blast_radius(depth) & inspect_recent_patches(depth)

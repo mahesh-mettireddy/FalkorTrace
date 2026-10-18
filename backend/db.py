@@ -18,6 +18,7 @@ from __future__ import annotations
 import copy
 import heapq
 import os
+import re
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
@@ -33,6 +34,19 @@ except ImportError:
     OfficialFalkorDB = None
 
 ALLOWED_TENANT_GRAPHS = {"falkortrace:killbill-prod", "falkortrace:nexus-commerce"}
+
+
+class GraphOperationError(RuntimeError):
+    """A graph read, algorithm, or persistence operation failed.
+
+    Callers must distinguish this from a successful query with zero rows. The
+    operation name is intentionally safe to expose; the original exception is
+    retained only as the chained cause for server-side diagnostics.
+    """
+
+    def __init__(self, operation: str) -> None:
+        self.operation = operation
+        super().__init__(f"Graph operation failed: {operation}")
 
 
 @dataclass
@@ -221,6 +235,9 @@ class InMemoryGraph:
                             f.get("run_id", ""),
                             f.get("validity_state", "VALID"),
                             f.get("superseded_by", ""),
+                            f.get("tenant_id", "UNKNOWN"),
+                            f.get("requirement_id", "UNKNOWN"),
+                            f.get("check_id", "UNKNOWN"),
                         ]
                     )
                 elif "s.name AS service" in q:
@@ -241,6 +258,10 @@ class InMemoryGraph:
                             f.get("observation_id", ""),
                             f.get("run_id", ""),
                             f.get("validity_state", "VALID"),
+                            f.get("superseded_by", ""),
+                            f.get("tenant_id", "UNKNOWN"),
+                            f.get("requirement_id", "UNKNOWN"),
+                            f.get("check_id", "UNKNOWN"),
                         ]
                     )
                 else:
@@ -626,6 +647,10 @@ class InMemoryGraph:
         if "MATCH (f:Finding) DETACH DELETE f" in q:
             count = len(self._dataset["findings"])
             self._dataset["findings"] = []
+            return [[count]]
+
+        if "MATCH (obs:Observation) DETACH DELETE obs" in q:
+            count = len(self._dataset.get("observations", []))
             self._dataset["observations"] = []
             return [[count]]
 
@@ -652,11 +677,16 @@ class InMemoryGraph:
                     and existing.get("ticket_id", "") == tid
                     and existing.get("input_fingerprint", "UNKNOWN") == in_fp
                     and existing.get("artifact_sha", "UNKNOWN") == art_sha
+                    and existing.get("requirement_id", "UNKNOWN") == params.get("requirement_id", "UNKNOWN")
+                    and existing.get("req_version", "UNKNOWN") == params.get("req_version", "UNKNOWN")
+                    and existing.get("check_id", "UNKNOWN") == params.get("check_id", "UNKNOWN")
+                    and existing.get("check_version", "UNKNOWN") == params.get("check_version", "UNKNOWN")
                     and existing.get("validity_state", "VALID") == "VALID"
                 )
             ]
             finding = {
                 "id": params["id"],
+                "tenant_id": params.get("tenant_id", "UNKNOWN"),
                 "service": svc,
                 "verdict": params["verdict"],
                 "text": params["text"],
@@ -666,7 +696,9 @@ class InMemoryGraph:
                 "session": params["session"],
                 "input_fingerprint": in_fp,
                 "artifact_sha": art_sha,
+                "requirement_id": params.get("requirement_id", "UNKNOWN"),
                 "req_version": params.get("req_version", "UNKNOWN"),
+                "check_id": params.get("check_id", "UNKNOWN"),
                 "check_version": params.get("check_version", "UNKNOWN"),
                 "observation_id": params.get("observation_id", ""),
                 "run_id": params.get("run_id", ""),
@@ -777,6 +809,19 @@ class InMemoryGraph:
                         "modified_module": mod_name,
                         "deployed_service": target_service,
                     },
+                )
+                self._dataset.setdefault("artifact_versions", []).append(
+                    {
+                        "id": params.get("artifact_id", f"ART-{fault_sha}"),
+                        "module": mod_name,
+                        "service": target_service,
+                        "version_tag": params.get("artifact_version", f"dynamic-fault ({fault_sha})"),
+                        "git_sha": fault_sha,
+                        "code_hash": params.get("code_hash", "sha256:unknown"),
+                        "source_snippet": params.get("diff_snippet", ""),
+                        "faulty": True,
+                        "dynamic": True,
+                    }
                 )
             # Mark prior findings on affected chain as STALE_VERSION_MISMATCH (preserve history!)
             for f in self._dataset["findings"]:
@@ -968,13 +1013,13 @@ class FalkorDBManager:
         self.url: Optional[str] = os.getenv("FALKORDB_URL") or None
         raw_host: str = os.getenv(
             "FALKORDB_HOST",
-            "r-6jissuruar.instance-3zbnvvx0i.hc-7up0crkyn.ap-south-1.aws.f2e0a955bb84.cloud",
+            "localhost",
         ).strip()
-        self.port: int = int(os.getenv("FALKORDB_PORT", "53164"))
+        self.port: int = int(os.getenv("FALKORDB_PORT", "6379"))
         self.username: Optional[str] = os.getenv("FALKORDB_USERNAME", "falkordb") or "falkordb"
         self.password: Optional[str] = os.getenv("FALKORDB_PASSWORD") or None
         self.ssl: bool = os.getenv("FALKORDB_SSL", "false").lower() in ("true", "1", "yes")
-        self.strict_mode: bool = os.getenv("FALKORTRACE_STRICT_DB", "false").lower() in ("true", "1", "yes")
+        self.strict_mode: bool = self._strict_mode_from_env()
 
         self.host: str = raw_host
         self._normalize_cloud_inputs(raw_host)
@@ -1002,6 +1047,11 @@ class FalkorDBManager:
         self.host = h
         if (".cloud" in self.host.lower() or "falkordb" in self.host.lower()) and not self.username:
             self.username = "falkordb"
+
+    @staticmethod
+    def _strict_mode_from_env() -> bool:
+        raw = os.getenv("FALKORTRACE_STRICT_DB", os.getenv("FALKORTRACE_STRICT_LIVE_DB", "false"))
+        return raw.lower() in ("true", "1", "yes", "on")
 
     def _connect(self) -> None:
         if OfficialFalkorDB is not None:
@@ -1040,7 +1090,7 @@ class FalkorDBManager:
 
         if self.strict_mode:
             raise RuntimeError(
-                f"FALKORTRACE_STRICT_DB=1 is enabled and live FalkorDB at {self.host}:{self.port} is unreachable: {self._last_error}"
+                f"Strict live-DB mode is enabled and FalkorDB at {self.host}:{self.port} is unreachable."
             )
 
         self._client = self._fallback_db
@@ -1055,6 +1105,7 @@ class FalkorDBManager:
         ssl: bool = False,
     ) -> Dict[str, Any]:
         """Dynamically reconnect to `app.falkordb.cloud/instances` or Docker at runtime."""
+        self.strict_mode = self._strict_mode_from_env()
         self.url = None
         self.port = int(port)
         self.username = username.strip() if username and username.strip() else None
@@ -1085,8 +1136,25 @@ class FalkorDBManager:
             "port": self.port,
             "username": self.username,
             "ssl": self.ssl,
-            "fallback_reason": self._last_error,
+            "fallback_reason": self._safe_error_text(self._last_error),
         }
+
+    @staticmethod
+    def _safe_error_text(error: Optional[str]) -> Optional[str]:
+        """Avoid returning passwords or credential-bearing URLs in diagnostics."""
+        if not error:
+            return None
+        safe = str(error)
+        for marker in ("password=", "passwd=", "pwd=", "api_key=", "token="):
+            while marker in safe.lower():
+                lower = safe.lower()
+                start = lower.index(marker)
+                end = safe.find(" ", start)
+                if end < 0:
+                    end = len(safe)
+                safe = safe[:start] + marker + "[redacted]" + safe[end:]
+        safe = re.sub(r"(?i)(://)([^/\s:@]+(?::[^/\s@]*)?@)", r"\1[redacted]@", safe)
+        return safe[:240]
 
 
 _DB_MANAGER: Optional[FalkorDBManager] = None
@@ -1098,6 +1166,10 @@ def get_db() -> FalkorDBManager:
     global _DB_MANAGER
     if _DB_MANAGER is None:
         _DB_MANAGER = FalkorDBManager()
+    elif FalkorDBManager._strict_mode_from_env() and not _DB_MANAGER.status().get("is_live_server"):
+        # Do not let a manager created during a local preview survive a later
+        # switch to strict live-DB mode.
+        raise RuntimeError("Strict live-DB mode is enabled but the active graph engine is not live FalkorDB.")
     return _DB_MANAGER
 
 
@@ -1112,7 +1184,7 @@ def ensure_tenant_seeded(db: Optional[FalkorDBManager] = None, tenant_id: str = 
     graph_name = f"falkortrace:{tid}"
     graph = db.select_graph(graph_name)
 
-    if not hasattr(graph, "_dataset") and tid in _VERIFIED_TENANTS:
+    if not hasattr(graph, "_dataset") and tid in _VERIFIED_TENANTS and not getattr(db, "strict_mode", False):
         return {
             "status": "ready",
             "tenant_id": tid,
@@ -1124,8 +1196,8 @@ def ensure_tenant_seeded(db: Optional[FalkorDBManager] = None, tenant_id: str = 
         res = graph.ro_query("MATCH (n:Service) RETURN count(n) LIMIT 1")
         rows = res.result_set
         count = int(rows[0][0]) if rows and rows[0] else 0
-    except Exception:
-        count = 0
+    except Exception as exc:
+        raise GraphOperationError("ensure_tenant_seeded.read_service_count") from exc
 
     if count == 0:
         res_seed = seed_tenant(db, tid)
@@ -1168,6 +1240,29 @@ def get_live_dataset_snapshot(graph: Any, tenant_id: str = "killbill-prod") -> D
                     mod["active_artifact_sha"] = sha_val
                 if sum_val:
                     mod["logic_summary"] = sum_val
+
+        artifact_res = graph.ro_query(
+            """
+            MATCH (c:Code_Module)-[:HAS_ARTIFACT]->(av:ArtifactVersion)
+            RETURN av.id AS id, av.module AS module, av.service AS service,
+                   av.version_tag AS version_tag, av.git_sha AS git_sha,
+                   av.code_hash AS code_hash
+            """
+        )
+        known_artifacts = {item.get("git_sha") for item in ds.get("artifact_versions", [])}
+        for row in artifact_res.result_set:
+            if row[4] not in known_artifacts:
+                ds.setdefault("artifact_versions", []).append(
+                    {
+                        "id": row[0],
+                        "module": row[1],
+                        "service": row[2],
+                        "version_tag": row[3] or "dynamic-artifact",
+                        "git_sha": row[4],
+                        "code_hash": row[5] or "sha256:unknown",
+                        "dynamic": True,
+                    }
+                )
 
         impl_res = graph.ro_query(
             """
@@ -1212,6 +1307,6 @@ def get_live_dataset_snapshot(graph: Any, tenant_id: str = "killbill-prod") -> D
                         "deployed_service": r[9] or "",
                     },
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        raise GraphOperationError("get_live_dataset_snapshot.read_topology") from exc
     return ds

@@ -9,19 +9,21 @@ Serves:
 - `POST /api/triage`: Multi-Agent Triage Swarm execution
 - `POST /api/seed`: Idempotent tenant graph reset/re-seed
 - `POST /api/memory/clear`: Episodic (:Finding) memory reset
-- `POST /api/remediate`: Live Graph Hotfix / Patch Rollback action
+- `POST /api/remediate`: Controlled simulated artifact rollback action
 - `GET /api/mcp/tools` & `POST /api/mcp/call`: Model Context Protocol endpoints
 """
 
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import hmac
+import os
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from backend.agent import (
@@ -31,10 +33,15 @@ from backend.agent import (
     run_head_to_head_benchmark,
     run_multi_agent_triage,
 )
-from backend.db import ensure_tenant_seeded, get_db, get_live_dataset_snapshot
+from backend.db import GraphOperationError, ensure_tenant_seeded, get_db, get_live_dataset_snapshot
 from backend.mcp_server import call_mcp_tool, list_mcp_tools
 from backend.seed import TENANT_METADATA, seed_tenant
-from backend.tools import apply_hotfix_remediation, inject_live_fault, recall_all_tenant_findings
+from backend.tools import (
+    apply_hotfix_remediation,
+    inject_live_fault,
+    recall_all_tenant_findings,
+    recall_all_tenant_observations,
+)
 
 
 @asynccontextmanager
@@ -52,10 +59,65 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+def _cors_origins() -> List[str]:
+    """Resolve the browser origin policy; same-origin local use needs no CORS."""
+    raw = os.getenv("FALKORTRACE_CORS_ORIGINS", "").strip()
+    if not raw:
+        return []
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    return origins
+
+
+def _provided_admin_token(
+    x_falkortrace_admin_token: Optional[str], authorization: Optional[str]
+) -> str:
+    if x_falkortrace_admin_token:
+        return x_falkortrace_admin_token.strip()
+    if authorization and authorization.lower().startswith("bearer "):
+        return authorization[7:].strip()
+    return ""
+
+
+def require_admin_token(
+    x_falkortrace_admin_token: Optional[str] = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
+) -> None:
+    """Protect mutating administration routes when an admin token is configured.
+
+    An unset token keeps local development convenient, but production/Vercel
+    deployments fail closed until an admin token is configured. Once configured,
+    callers must present either ``X-FalkorTrace-Admin-Token`` or ``Authorization:
+    Bearer ...``. The configured value is never included in an error response.
+    """
+    expected = os.getenv("FALKORTRACE_ADMIN_TOKEN", "").strip()
+    if not expected:
+        if os.getenv("VERCEL_ENV", "").lower() == "production" or os.getenv("FALKORTRACE_ENV", "").lower() == "production":
+            raise HTTPException(status_code=503, detail="Protected administration is not configured")
+        return
+    provided = _provided_admin_token(x_falkortrace_admin_token, authorization)
+    if not provided or not hmac.compare_digest(provided, expected):
+        raise HTTPException(status_code=401, detail="Admin authentication required")
+
+
+@app.exception_handler(GraphOperationError)
+async def graph_operation_error_handler(_request: Any, exc: GraphOperationError) -> JSONResponse:
+    """Turn graph failures into explicit non-success responses instead of empty evidence."""
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": {
+                "code": "GRAPH_OPERATION_FAILED",
+                "operation": exc.operation,
+                "message": "The requested graph operation failed; no evidence was returned.",
+            }
+        },
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins(),
+    allow_credentials=bool(_cors_origins()),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -146,13 +208,17 @@ def health_check() -> Dict[str, Any]:
 
 
 @app.post("/api/config/llm")
-def update_llm_config(req: LLMConfigRequest) -> Dict[str, Any]:
+def update_llm_config(
+    req: LLMConfigRequest, _admin_token: None = Depends(require_admin_token)
+) -> Dict[str, Any]:
     llm_state = configure_llm_runtime(provider=req.provider, api_key=req.api_key, model=req.model)
     return {"status": "ok", "llm": llm_state}
 
 
 @app.post("/api/config/falkordb")
-def update_falkordb_connection(req: FalkorDBConfigRequest) -> Dict[str, Any]:
+def update_falkordb_connection(
+    req: FalkorDBConfigRequest, _admin_token: None = Depends(require_admin_token)
+) -> Dict[str, Any]:
     db = get_db()
     status = db.reconfigure(
         host=req.host,
@@ -184,6 +250,7 @@ def get_tenant_graph(tenant_id: str = Query(default="killbill-prod")) -> Dict[st
 
     # Fetch all live findings in 1 single Cypher query instead of N queries
     live_findings: List[Dict[str, Any]] = recall_all_tenant_findings(graph, limit=25)
+    live_observations: List[Dict[str, Any]] = recall_all_tenant_observations(graph, limit=50)
 
     nodes: List[Dict[str, Any]] = []
     edges: List[Dict[str, Any]] = []
@@ -244,6 +311,25 @@ def get_tenant_graph(tenant_id: str = Query(default="killbill-prod")) -> Dict[st
                 "from": mod["service"],
                 "to": mod["name"],
                 "label": "IMPLEMENTED_BY",
+            }
+        )
+
+    for artifact in ds.get("artifact_versions", []):
+        artifact_id = f"artifact:{artifact['module']}:{artifact['git_sha']}"
+        nodes.append(
+            {
+                "id": artifact_id,
+                "label": f"{artifact.get('version_tag', 'artifact')} ({artifact['git_sha']})",
+                "type": "ArtifactVersion",
+                "subtitle": artifact.get("service", ""),
+                "data": artifact,
+            }
+        )
+        edges.append(
+            {
+                "from": artifact["module"],
+                "to": artifact_id,
+                "label": "HAS_ARTIFACT",
             }
         )
 
@@ -330,8 +416,8 @@ def get_tenant_graph(tenant_id: str = Query(default="killbill-prod")) -> Dict[st
                 "data": chk,
             }
         )
-        edges.append({"from": chk["target_module"], "to": chk["check_id"], "label": "VERIFIED_BY"})
-        edges.append({"from": chk["requirement_id"], "to": chk["check_id"], "label": "CHECKED_BY"})
+        edges.append({"from": chk["check_id"], "to": chk["target_module"], "label": "TARGETS"})
+        edges.append({"from": chk["check_id"], "to": chk["requirement_id"], "label": "VERIFIES"})
 
     for f in live_findings:
         val_state = f.get("validity_state", "VALID")
@@ -346,10 +432,59 @@ def get_tenant_graph(tenant_id: str = Query(default="killbill-prod")) -> Dict[st
             }
         )
         edges.append({"from": f["id"], "to": f["service"], "label": "ABOUT"})
+        if f.get("observation_id"):
+            edges.append({"from": f["id"], "to": f["observation_id"], "label": "EVIDENCED_BY"})
+        if f.get("check_id") and f.get("check_id") != "UNKNOWN":
+            edges.append({"from": f["id"], "to": f["check_id"], "label": "USES_CHECK"})
+        if f.get("requirement_id") and f.get("requirement_id") != "UNKNOWN":
+            edges.append({"from": f["id"], "to": f["requirement_id"], "label": "EVIDENCES_REQUIREMENT"})
+        if f.get("artifact_sha") and f.get("artifact_sha") != "UNKNOWN":
+            artifact_id = next(
+                (
+                    f"artifact:{artifact['module']}:{artifact['git_sha']}"
+                    for artifact in ds.get("artifact_versions", [])
+                    if artifact.get("git_sha") == f.get("artifact_sha")
+                ),
+                None,
+            )
+            if artifact_id:
+                edges.append({"from": f["id"], "to": artifact_id, "label": "ABOUT_ARTIFACT"})
+
+    for obs in live_observations:
+        observation_id = obs.get("observation_id") or obs.get("id")
+        if not observation_id:
+            continue
+        nodes.append(
+            {
+                "id": observation_id,
+                "label": observation_id,
+                "type": "Observation",
+                "subtitle": f"{obs.get('status', 'UNKNOWN')} · {obs.get('check_id', '')}",
+                "data": obs,
+            }
+        )
+        if obs.get("target_module"):
+            edges.append({"from": observation_id, "to": obs["target_module"], "label": "OBSERVED_ON"})
+        if obs.get("check_id"):
+            edges.append({"from": observation_id, "to": obs["check_id"], "label": "EXECUTED_CHECK"})
+        if obs.get("requirement_id") and obs.get("requirement_id") != "UNKNOWN":
+            edges.append({"from": observation_id, "to": obs["requirement_id"], "label": "TESTED_REQUIREMENT"})
+        if obs.get("artifact_sha") and obs.get("artifact_sha") != "UNKNOWN":
+            artifact_id = next(
+                (
+                    f"artifact:{artifact['module']}:{artifact['git_sha']}"
+                    for artifact in ds.get("artifact_versions", [])
+                    if artifact.get("git_sha") == obs.get("artifact_sha")
+                ),
+                None,
+            )
+            if artifact_id:
+                edges.append({"from": observation_id, "to": artifact_id, "label": "USED_ARTIFACT"})
 
     return {
         "tenant_id": tenant_id,
         "graph_name": graph_name,
+        "graph_source": "LIVE_FALKORDB_QUERY" if db.status().get("is_live_server") else "IN_MEMORY_FIXTURE",
         "tenant_meta": TENANT_METADATA.get(tenant_id, {}),
         "seed_status": seed_status,
         "falkordb": db.status(),
@@ -358,6 +493,7 @@ def get_tenant_graph(tenant_id: str = Query(default="killbill-prod")) -> Dict[st
         "services": [s["name"] for s in ds["services"]],
         "tickets": ds["client_issues"],
         "findings": live_findings,
+        "observations": live_observations,
     }
 
 
@@ -414,17 +550,25 @@ def compare_depth_triage(req: TriageRequest) -> Dict[str, Any]:
 
 
 @app.post("/api/seed")
-def reseed_tenant_graph(req: SeedRequest) -> Dict[str, Any]:
+def reseed_tenant_graph(
+    req: SeedRequest, _admin_token: None = Depends(require_admin_token)
+) -> Dict[str, Any]:
     db = get_db()
     return seed_tenant(db, req.tenant_id)
 
 
 @app.post("/api/memory/clear")
-def clear_tenant_memory(req: MemoryClearRequest) -> Dict[str, Any]:
+def clear_tenant_memory(
+    req: MemoryClearRequest, _admin_token: None = Depends(require_admin_token)
+) -> Dict[str, Any]:
     db = get_db()
     graph_name = f"falkortrace:{req.tenant_id}"
     graph = db.select_graph(graph_name)
-    graph.query("MATCH (f:Finding) DETACH DELETE f")
+    try:
+        graph.query("MATCH (f:Finding) DETACH DELETE f")
+        graph.query("MATCH (obs:Observation) DETACH DELETE obs")
+    except Exception as exc:
+        raise GraphOperationError("clear_tenant_memory.delete_findings") from exc
     return {
         "status": "cleared",
         "tenant_id": req.tenant_id,
@@ -433,28 +577,41 @@ def clear_tenant_memory(req: MemoryClearRequest) -> Dict[str, Any]:
 
 
 @app.post("/api/remediate")
-def remediate_patch_regression(req: RemediateRequest) -> Dict[str, Any]:
+def remediate_patch_regression(
+    req: RemediateRequest, _admin_token: None = Depends(require_admin_token)
+) -> Dict[str, Any]:
     db = get_db()
     ensure_tenant_seeded(db, req.tenant_id)
     graph = db.select_graph(f"falkortrace:{req.tenant_id}")
-    return apply_hotfix_remediation(graph, service=req.service, sha=req.sha)
+    try:
+        return apply_hotfix_remediation(graph, service=req.service, sha=req.sha, tenant_id=req.tenant_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.post("/api/inject-fault")
-def inject_chaos_fault_endpoint(req: InjectFaultRequest) -> Dict[str, Any]:
+def inject_chaos_fault_endpoint(
+    req: InjectFaultRequest, _admin_token: None = Depends(require_admin_token)
+) -> Dict[str, Any]:
     db = get_db()
     ensure_tenant_seeded(db, req.tenant_id)
     graph = db.select_graph(f"falkortrace:{req.tenant_id}")
-    return inject_live_fault(
-        graph=graph,
-        service=req.service,
-        author=req.author,
-        summary=req.summary,
-    )
+    try:
+        return inject_live_fault(
+            graph=graph,
+            service=req.service,
+            author=req.author,
+            summary=req.summary,
+            tenant_id=req.tenant_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.post("/api/benchmark")
-def execute_head_to_head_benchmark(req: SeedRequest) -> Dict[str, Any]:
+def execute_head_to_head_benchmark(
+    req: SeedRequest, _admin_token: None = Depends(require_admin_token)
+) -> Dict[str, Any]:
     return run_head_to_head_benchmark(tenant_id=req.tenant_id)
 
 
@@ -464,10 +621,10 @@ def get_mcp_tools() -> Dict[str, Any]:
 
 
 @app.post("/api/mcp/call")
-def invoke_mcp_tool(req: MCPCallRequest) -> Dict[str, Any]:
+def invoke_mcp_tool(
+    req: MCPCallRequest, _admin_token: None = Depends(require_admin_token)
+) -> Dict[str, Any]:
     try:
         return call_mcp_tool(req.tool_name, req.arguments, tenant_id=req.tenant_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-
-
