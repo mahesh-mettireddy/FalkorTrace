@@ -12,6 +12,7 @@ Implements the AI Judge's Section 03, 04, 05 & 06 Contracts:
 from __future__ import annotations
 
 import hashlib
+import json
 import time
 import uuid
 from datetime import datetime, timezone
@@ -1886,3 +1887,85 @@ RETURN c.name AS module, r.id AS req_id
         "at": now_iso,
         "elapsed_ms": elapsed_ms,
     }
+
+
+def create_custom_ticket(
+    graph: Any,
+    service: str,
+    payload: Dict[str, Any],
+    title: Optional[str] = None,
+    client_name: str = "Live Evaluator",
+    ticket_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Create a real `(:Client_Issue)-[:REPORTS_ON]->(:Service)` node in FalkorDB
+    from live user-configured parameters so the agent triages and executes
+    the sandbox verifier against the exact user-supplied inputs.
+    """
+    svc_info, _ = resolve_service(graph, service)
+    if not svc_info:
+        raise ValueError(f"Unknown service '{service}'.")
+
+    payload_dict = dict(payload or {})
+    raw_payload = json.dumps(payload_dict, sort_keys=True)
+    payload_hash = hashlib.sha256(f"{service}:{raw_payload}".encode("utf-8")).hexdigest()[:5].upper()
+    issue_id = (ticket_id or "").strip() or f"TKT-LIVE-{payload_hash}"
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Determine whether this payload is targeting the schema validator (`currency` / `idempotency_key`)
+    payload_valid = True
+    payload_error = ""
+    if "currency" in payload_dict:
+        from backend.verifier import ALLOWLISTED_ISO_4217_FIAT, UUID_RE
+
+        curr = str(payload_dict.get("currency", "")).upper().strip()
+        idem = str(payload_dict.get("idempotency_key", "")).strip()
+        if curr not in ALLOWLISTED_ISO_4217_FIAT:
+            payload_valid = False
+            payload_error = f"HTTP 400 Bad Request: currency='{curr}' is not an ISO-4217 fiat currency code."
+        elif idem and not UUID_RE.match(idem):
+            payload_valid = False
+            payload_error = f"HTTP 400 Bad Request: idempotency_key='{idem}' is not a valid UUIDv4."
+
+    effective_title = (title or "").strip() or f"Live Custom Test on {service} ({raw_payload})"
+    params = {
+        "id": issue_id,
+        "title": effective_title,
+        "client_name": client_name,
+        "client_tier": "Live-Custom-Test",
+        "reported_service": service,
+        "reported_payload": raw_payload,
+        "payload_valid": payload_valid,
+        "payload_error": payload_error,
+        "expected_behavior": "Dynamic evaluation via FalkorDB Code_Module & Requirement lineage",
+        "actual_behavior": f"Live custom payload submitted: {raw_payload}",
+        "created_at": now_iso,
+    }
+    cypher = """
+MATCH (s:Service {name: $reported_service})
+OPTIONAL MATCH (old:Client_Issue {id: $id})
+DETACH DELETE old
+WITH s
+CREATE (i:Client_Issue {
+    id: $id,
+    title: $title,
+    client_name: $client_name,
+    client_tier: $client_tier,
+    reported_service: $reported_service,
+    reported_payload: $reported_payload,
+    payload_valid: $payload_valid,
+    payload_error: $payload_error,
+    expected_behavior: $expected_behavior,
+    actual_behavior: $actual_behavior,
+    created_at: $created_at
+})
+CREATE (i)-[:REPORTS_ON]->(s)
+RETURN i.id AS id, s.name AS service
+"""
+    try:
+        graph.query(cypher, params)
+    except Exception as exc:
+        raise GraphOperationError("create_custom_ticket.persist") from exc
+
+    return params
+

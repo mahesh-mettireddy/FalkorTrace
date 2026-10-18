@@ -165,13 +165,13 @@
   </header>
 
   <!-- ===================================================================== -->
-  <!-- 2. CASE SELECTOR BAR & DEPTH HORIZON                                   -->
+  <!-- 2. CASE SELECTOR BAR & GRAPH-GUIDED LIVE INPUT BUILDER                -->
   <!-- ===================================================================== -->
   <section id="scenarioControls" class="border-b border-slate-800/80 bg-[#090f1e] px-4 py-2 shrink-0" aria-label="Demo scenario controls">
     <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-2">
-      <!-- 7 Interactive Scenarios -->
+      <!-- 4 Core Cases + Live Custom Input Builder Toggle -->
       <div class="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
-        <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mr-1 shrink-0">Incident Cases:</span>
+        <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mr-1 shrink-0">Core Cases:</span>
 
         <button type="button" aria-pressed="true" id="scen-1" onclick="runScenario(1)" class="scenario-btn active shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/90 hover:bg-slate-800 transition">
           <div class="flex items-center gap-1.5">
@@ -183,10 +183,10 @@
 
         <button type="button" aria-pressed="false" id="scen-2" onclick="runScenario(2)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/90 hover:bg-slate-800 transition">
           <div class="flex items-center gap-1.5">
-            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 mono">2. PRD Rule</span>
+            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 mono">2. PRD Spec</span>
             <span class="text-xs font-bold text-white">TICKET-4908</span>
           </div>
-          <div class="text-[10px] text-slate-400">42 seats &lt; 50 threshold (0% valid)</div>
+          <div class="text-[10px] text-slate-400">42 seats &lt; 50 threshold (Valid)</div>
         </button>
 
         <button type="button" aria-pressed="false" id="scen-3" onclick="runScenario(3)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/90 hover:bg-slate-800 transition">
@@ -197,36 +197,21 @@
           <div class="text-[10px] text-slate-400">Client sent <span class="mono text-amber-300">USDT-ERC20</span></div>
         </button>
 
-        <button type="button" aria-pressed="false" id="scen-4" onclick="runScenario(4)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/90 hover:bg-slate-800 transition">
-          <div class="flex items-center gap-1.5">
-            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 mono">4. WCC Island</span>
-            <span class="text-xs font-bold text-white">TICKET-4920</span>
-          </div>
-          <div class="text-[10px] text-slate-400"><span class="mono">algo.WCC</span> catches disconnected node</div>
-        </button>
-
-        <button type="button" aria-pressed="false" id="scen-5" onclick="runScenario(5)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/90 hover:bg-slate-800 transition">
-          <div class="flex items-center gap-1.5">
-            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 mono">5. Fake Service</span>
-            <span class="text-xs font-bold text-white">quantum-ledger-v9</span>
-          </div>
-          <div class="text-[10px] text-slate-400">Entity gate blocks in <span class="mono">0 hops</span></div>
-        </button>
-
         <button type="button" aria-pressed="false" id="scen-6" onclick="runScenario(6)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/90 hover:bg-slate-800 transition">
           <div class="flex items-center gap-1.5">
-            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-teal-500/20 text-teal-300 mono">6. Memory Hit</span>
-            <span class="text-xs font-bold text-white">Repeat 4902</span>
+            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-teal-500/20 text-teal-300 mono">4. Graph Memory</span>
+            <span class="text-xs font-bold text-white">O(1) Reuse</span>
           </div>
-          <div class="text-[10px] text-slate-400">Exact SHA match ➔ O(1) reuse</div>
+          <div class="text-[10px] text-slate-400">Verified SHA match ➔ instant hit</div>
         </button>
 
-        <button type="button" aria-pressed="false" id="scen-7" onclick="runScenario(7)" class="scenario-btn shrink-0 text-left px-2.5 py-1.5 rounded-lg border border-slate-700/80 bg-slate-900/90 hover:bg-slate-800 transition">
+        <!-- Toggle Live Custom Input Builder -->
+        <button type="button" id="toggleCustomBuilderBtn" onclick="toggleCustomBuilder()" class="shrink-0 text-left px-3 py-1.5 rounded-lg border border-cyan-500/50 bg-cyan-950/30 hover:bg-cyan-900/40 transition">
           <div class="flex items-center gap-1.5">
-            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 mono">7. Memory Guard</span>
-            <span class="text-xs font-bold text-white">Diff Input (4905)</span>
+            <span class="text-[10px] font-extrabold px-1.5 py-0.2 rounded bg-cyan-500/25 text-cyan-200 mono">🧪 LIVE INPUT</span>
+            <span class="text-xs font-extrabold text-cyan-300">Test Custom Parameters</span>
           </div>
-          <div class="text-[10px] text-slate-400">Refuses 4902 cache ➔ Rechecks Day 29</div>
+          <div class="text-[10px] text-cyan-200/80">Graph-guided code contract tester</div>
         </button>
       </div>
 
@@ -253,6 +238,99 @@
           </button>
         </form>
         <span id="scenarioStatus" class="hidden xl:inline text-[10px] text-slate-400 mono" role="status" aria-live="polite">Ready</span>
+      </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- GRAPH-GUIDED LIVE CUSTOM INPUT BUILDER (Dynamic Code Functionality) -->
+    <!-- =================================================================== -->
+    <div id="customBuilderPanel" class="hidden mt-2.5 pt-2.5 border-t border-cyan-500/30 bg-[#060c1a] rounded-xl p-3 border">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-extrabold uppercase tracking-wider text-cyan-300">
+            🧠 How FalkorDB Knows Which Parameters to Ask (Graph-Guided Code Memory)
+          </span>
+          <span class="text-[10px] px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 mono">
+            (:Service)-[:DEPENDS_ON*0..3]-&gt;(:Code_Module {governed_field})-[:VERIFIED_BY]-&gt;(:CheckDefinition)
+          </span>
+        </div>
+        <button type="button" onclick="toggleCustomBuilder()" class="text-[11px] text-slate-400 hover:text-white mono">✕ Hide</button>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
+        <!-- 1. Select Contract / Downstream Code Module discovered in Graph -->
+        <div class="lg:col-span-4 bg-slate-900/90 border border-slate-800 rounded-lg p-2.5">
+          <label class="block text-[10px] font-bold uppercase text-slate-400 mb-1">
+            1. Graph-Discovered Code Contract (`governed_field`)
+          </label>
+          <select id="customContractSelect" onchange="onCustomContractChange(this.value)" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-emerald-300 font-semibold mono">
+            <option value="proration">Hop 3: DailyProrationCalculator.java (governed_field: cycle_day)</option>
+            <option value="seats">Hop 0: DiscountPolicyEvaluator.java (governed_field: active_seats)</option>
+            <option value="webhook">Hop 0: PaymentWebhookValidator.java (governed_field: currency)</option>
+          </select>
+          <div id="customContractMeta" class="mt-1.5 text-[10px] text-slate-400 mono">
+            Entrypoint: <span class="text-sky-300">billing-edge-api</span> ➔ Check: <span class="text-amber-300">CHK-PRORATION-30-360</span> (PRD-INV-104)
+          </div>
+        </div>
+
+        <!-- 2. Dynamic Parameter Inputs Guided by Code_Module.governed_field -->
+        <div class="lg:col-span-5 bg-slate-900/90 border border-slate-800 rounded-lg p-2.5">
+          <!-- Proration Inputs -->
+          <div id="customParamsProration" class="grid grid-cols-3 gap-2">
+            <div>
+              <label class="block text-[10px] font-bold uppercase text-cyan-300 mono mb-1">cycle_day (1..29)</label>
+              <input id="inpCycleDay" type="number" min="1" max="29" value="20" class="w-full bg-slate-950 border border-cyan-500/40 rounded px-2 py-1 text-xs text-white font-bold mono" />
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold uppercase text-slate-400 mono mb-1">upgrade_from</label>
+              <select id="inpUpgradeFrom" class="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-white mono">
+                <option value="BASIC_30">BASIC_30 ($30)</option>
+                <option value="PRO_60">PRO_60 ($60)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold uppercase text-slate-400 mono mb-1">upgrade_to</label>
+              <select id="inpUpgradeTo" class="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-white mono">
+                <option value="ENT_90">ENT_90 ($90)</option>
+                <option value="PRO_60">PRO_60 ($60)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Seat Discount Inputs -->
+          <div id="customParamsSeats" class="hidden grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-[10px] font-bold uppercase text-cyan-300 mono mb-1">active_seats (Threshold ≥ 50)</label>
+              <input id="inpActiveSeats" type="number" min="1" max="500" value="65" class="w-full bg-slate-950 border border-cyan-500/40 rounded px-2 py-1 text-xs text-white font-bold mono" />
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold uppercase text-slate-400 mono mb-1">plan_tier</label>
+              <input type="text" value="ENTERPRISE_ANNUAL" readonly class="w-full bg-slate-950/60 border border-slate-800 rounded px-2 py-1 text-xs text-slate-400 mono" />
+            </div>
+          </div>
+
+          <!-- Webhook Currency Inputs -->
+          <div id="customParamsWebhook" class="hidden grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-[10px] font-bold uppercase text-cyan-300 mono mb-1">currency (ISO-4217 Check)</label>
+              <input id="inpCurrency" type="text" value="DOGE-SOL" class="w-full bg-slate-950 border border-cyan-500/40 rounded px-2 py-1 text-xs text-white font-bold mono" />
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold uppercase text-slate-400 mono mb-1">amount_cents</label>
+              <input id="inpAmountCents" type="number" value="250000" class="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-white mono" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Submit Action -->
+        <div class="lg:col-span-3 flex flex-col gap-1.5">
+          <button type="button" onclick="submitCustomLiveTicket()" class="w-full px-3 py-2 rounded-lg bg-gradient-to-r from-cyan-400 to-emerald-400 hover:from-cyan-300 hover:to-emerald-300 text-slate-950 font-extrabold text-xs shadow-md shadow-cyan-500/20 transition">
+            ⚡ Create Live Ticket in FalkorDB &amp; Verify
+          </button>
+          <span class="text-[10px] text-slate-400 leading-tight">
+            Writes a real <span class="mono text-cyan-300">(:Client_Issue)</span> node to FalkorDB &amp; runs live sandbox math.
+          </span>
+        </div>
       </div>
     </div>
   </section>
@@ -1025,6 +1103,94 @@
       } catch (error) {
         setWorkspaceLoading(false);
         handleUiError(error, 'Question trace failed');
+      }
+    }
+
+    function toggleCustomBuilder() {
+      const panel = document.getElementById('customBuilderPanel');
+      if (!panel) return;
+      panel.classList.toggle('hidden');
+    }
+
+    function onCustomContractChange(mode) {
+      document.getElementById('customParamsProration').classList.toggle('hidden', mode !== 'proration');
+      document.getElementById('customParamsSeats').classList.toggle('hidden', mode !== 'seats');
+      document.getElementById('customParamsWebhook').classList.toggle('hidden', mode !== 'webhook');
+      const metaEl = document.getElementById('customContractMeta');
+      if (mode === 'proration') {
+        metaEl.innerHTML = `Entrypoint: <span class="text-sky-300">billing-edge-api</span> ➔ Hop 3 Check: <span class="text-amber-300">CHK-PRORATION-30-360</span> (PRD-INV-104)`;
+      } else if (mode === 'seats') {
+        metaEl.innerHTML = `Entrypoint: <span class="text-sky-300">invoice-orchestrator</span> ➔ Hop 0 Check: <span class="text-amber-300">CHK-DISCOUNT-SEAT-50</span> (PRD-DISC-209)`;
+      } else {
+        metaEl.innerHTML = `Entrypoint: <span class="text-sky-300">payment-gateway-router</span> ➔ Hop 0 Check: <span class="text-amber-300">CHK-WEBHOOK-ISO4217</span> (SRD-PAY-301)`;
+      }
+    }
+
+    async function submitCustomLiveTicket() {
+      const mode = document.getElementById('customContractSelect').value;
+      let service = 'billing-edge-api';
+      let payload = {};
+      let title = '';
+
+      if (mode === 'proration') {
+        service = 'billing-edge-api';
+        const cycleDay = Math.max(1, Math.min(29, parseInt(document.getElementById('inpCycleDay').value || '20', 10)));
+        const upFrom = document.getElementById('inpUpgradeFrom').value || 'BASIC_30';
+        const upTo = document.getElementById('inpUpgradeTo').value || 'ENT_90';
+        payload = { cycle_day: cycleDay, billing_period_days: 30, upgrade_from: upFrom, upgrade_to: upTo };
+        title = `Live Custom Upgrade on Day ${cycleDay}/30 (${upFrom} -> ${upTo})`;
+      } else if (mode === 'seats') {
+        service = 'invoice-orchestrator';
+        const seats = Math.max(1, parseInt(document.getElementById('inpActiveSeats').value || '65', 10));
+        payload = { active_seats: seats, plan_tier: 'ENTERPRISE_ANNUAL', expected_discount_pct: seats >= 50 ? 15 : 0 };
+        title = `Live Custom Seat Tier Check (${seats} active_seats vs 50 threshold)`;
+      } else {
+        service = 'payment-gateway-router';
+        const curr = (document.getElementById('inpCurrency').value || 'DOGE-SOL').trim().toUpperCase();
+        const amt = parseInt(document.getElementById('inpAmountCents').value || '250000', 10);
+        payload = {
+          currency: curr,
+          amount_cents: amt,
+          idempotency_key: '550e8400-e29b-41d4-a716-446655440000'
+        };
+        title = `Live Custom Webhook Payload (currency=${curr})`;
+      }
+
+      if (currentTenant !== 'killbill-prod') {
+        currentTenant = 'killbill-prod';
+        document.getElementById('tenantSelect').value = 'killbill-prod';
+      }
+
+      setWorkspaceLoading(true);
+      try {
+        const res = await fetchJson('/api/tickets/custom', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tenant_id: currentTenant,
+            service,
+            payload,
+            title,
+            client_name: 'Live Evaluator',
+            depth: currentDepth,
+            bypass_memory: true
+          })
+        });
+        currentService = res.queried_service || service;
+        currentTicketId = res.ticket_id;
+        lastTriageResult = res;
+        const graphRes = await fetchJson(`/api/graph?tenant_id=${encodeURIComponent(currentTenant)}`);
+        fullGraphData = graphRes || { nodes: [], edges: [] };
+        document.getElementById('totalNodesCount').textContent = (fullGraphData.nodes || []).length;
+        renderComparisonWorkspace(res);
+        setGlobalNotice(
+          `Created live node (:Client_Issue {id: "${res.ticket_id}"}) in FalkorDB & executed sandbox check (${res.verification?.expected_value || ''} vs ${res.verification?.observed_value || ''}).`,
+          'success'
+        );
+        setWorkspaceLoading(false);
+      } catch (error) {
+        setWorkspaceLoading(false);
+        handleUiError(error, 'Custom live ticket creation failed');
       }
     }
 

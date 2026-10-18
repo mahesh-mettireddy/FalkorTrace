@@ -831,6 +831,28 @@ class InMemoryGraph:
                         f["superseded_by"] = fault_sha
             return [[mod_name, req_id]]
 
+        # 7. Create a dynamic Client_Issue node
+        if "CREATE (i:Client_Issue" in q:
+            issue_id = params.get("id", "TKT-LIVE-001")
+            self._dataset["client_issues"] = [
+                existing for existing in self._dataset["client_issues"] if existing.get("id") != issue_id
+            ]
+            issue_obj = {
+                "id": issue_id,
+                "title": params.get("title", "Custom Live Incident"),
+                "client_name": params.get("client_name", "Live Tester"),
+                "client_tier": params.get("client_tier", "Enterprise-SLA"),
+                "reported_service": params.get("reported_service", "billing-edge-api"),
+                "reported_payload": params.get("reported_payload", "{}"),
+                "payload_valid": bool(params.get("payload_valid", True)),
+                "payload_error": params.get("payload_error", ""),
+                "expected_behavior": params.get("expected_behavior", "Evaluate against graph-linked Requirement & Code_Module"),
+                "actual_behavior": params.get("actual_behavior", "Submitted via Live Graph-Guided Parameter Inspector"),
+                "created_at": params.get("created_at", "2026-10-18T10:00:00Z"),
+            }
+            self._dataset["client_issues"].insert(0, issue_obj)
+            return [[issue_id, issue_obj["reported_service"]]]
+
         return []
 
     # -------------------------------------------------------------------------
@@ -1311,6 +1333,37 @@ def get_live_dataset_snapshot(graph: Any, tenant_id: str = "killbill-prod") -> D
                         "author": r[7] or "@chaos-bot",
                         "modified_module": r[8] or "",
                         "deployed_service": r[9] or "",
+                    },
+                )
+
+        issue_res = graph.ro_query(
+            """
+            MATCH (i:Client_Issue)-[:REPORTS_ON]->(s:Service)
+            RETURN i.id AS id, i.title AS title, i.client_name AS client_name,
+                   i.client_tier AS client_tier, s.name AS reported_service,
+                   i.reported_payload AS reported_payload, i.payload_valid AS payload_valid,
+                   i.payload_error AS payload_error, i.expected_behavior AS expected_behavior,
+                   i.actual_behavior AS actual_behavior, i.created_at AS created_at
+            ORDER BY i.created_at DESC
+            """
+        )
+        known_issues = {item["id"] for item in ds["client_issues"]}
+        for r in issue_res.result_set:
+            if r[0] and r[0] not in known_issues:
+                ds["client_issues"].insert(
+                    0,
+                    {
+                        "id": r[0],
+                        "title": r[1] or "Custom Live Ticket",
+                        "client_name": r[2] or "Live Tester",
+                        "client_tier": r[3] or "Enterprise-SLA",
+                        "reported_service": r[4] or "billing-edge-api",
+                        "reported_payload": r[5] or "{}",
+                        "payload_valid": bool(r[6]),
+                        "payload_error": r[7] or "",
+                        "expected_behavior": r[8] or "",
+                        "actual_behavior": r[9] or "",
+                        "created_at": r[10] or "",
                     },
                 )
     except Exception as exc:

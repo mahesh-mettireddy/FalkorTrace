@@ -739,3 +739,55 @@ def test_memory_clear_removes_findings_and_observations() -> None:
     after = client.get("/api/graph?tenant_id=killbill-prod").json()
     assert after["findings"] == []
     assert after["observations"] == []
+
+
+def test_custom_live_ticket_creation_and_dynamic_sandbox_math() -> None:
+    # 1. Create a live custom proration ticket with cycle_day=10 (20 remaining days out of 30)
+    # Expected 30/360 math: ($90 - $30) * (20 / 30) = $40.00
+    # Faulty sha:9f82d1a math: ($90 - $30) * ((20 + 1) / 20) = $60 * 1.05 = $63.00
+    res_proration = client.post(
+        "/api/tickets/custom",
+        json={
+            "tenant_id": "killbill-prod",
+            "service": "billing-edge-api",
+            "payload": {
+                "cycle_day": 10,
+                "billing_period_days": 30,
+                "upgrade_from": "BASIC_30",
+                "upgrade_to": "ENT_90",
+            },
+            "title": "Live Test Day 10 Upgrade",
+            "depth": 4,
+            "bypass_memory": True,
+        },
+    )
+    assert res_proration.status_code == 200
+    data = res_proration.json()
+    assert data["verdict"] == "PATCH_REGRESSION"
+    assert data["verification"]["expected_value"] == "$40.00"
+    assert data["verification"]["observed_value"] == "$63.00"
+    assert data["ticket_id"].startswith("TKT-LIVE-")
+
+    # 2. Create a live custom seat discount ticket with active_seats=65 (>= 50 threshold -> 15% discount)
+    res_seats = client.post(
+        "/api/tickets/custom",
+        json={
+            "tenant_id": "killbill-prod",
+            "service": "invoice-orchestrator",
+            "payload": {
+                "active_seats": 65,
+                "plan_tier": "ENTERPRISE_ANNUAL",
+                "expected_discount_pct": 15,
+            },
+            "title": "Live Test 65 Seats",
+            "depth": 4,
+            "bypass_memory": True,
+        },
+    )
+    assert res_seats.status_code == 200
+    seats_data = res_seats.json()
+    assert seats_data["verdict"] == "WORKING_AS_PER_PRD"
+    assert "15% discount" in seats_data["verification"]["expected_value"]
+    assert "15% discount" in seats_data["verification"]["observed_value"]
+
+

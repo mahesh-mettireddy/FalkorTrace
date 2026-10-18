@@ -37,6 +37,7 @@ from backend.mcp_server import call_mcp_tool, list_mcp_tools
 from backend.seed import TENANT_METADATA, seed_tenant
 from backend.tools import (
     apply_hotfix_remediation,
+    create_custom_ticket,
     inject_live_fault,
     recall_all_tenant_findings,
     recall_all_tenant_observations,
@@ -176,6 +177,16 @@ class MCPCallRequest(BaseModel):
     tool_name: str
     arguments: Dict[str, Any] = Field(default_factory=dict)
     tenant_id: str = Field(default="killbill-prod")
+
+
+class CustomTicketRequest(BaseModel):
+    tenant_id: str = Field(default="killbill-prod")
+    service: str = Field(default="billing-edge-api")
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    title: Optional[str] = Field(default=None)
+    client_name: str = Field(default="Live Evaluator")
+    depth: int = Field(default=4, ge=1, le=4)
+    bypass_memory: bool = Field(default=True)
 
 
 # ============================================================================
@@ -492,6 +503,38 @@ def execute_triage(req: TriageRequest) -> Dict[str, Any]:
         bypass_memory=req.bypass_memory,
         session_id=req.session_id,
     )
+
+
+@app.post("/api/tickets/custom")
+def create_and_triage_custom_ticket(req: CustomTicketRequest) -> Dict[str, Any]:
+    """
+    Writes a real `(:Client_Issue)-[:REPORTS_ON]->(:Service)` node into FalkorDB
+    using live user-specified parameters (`cycle_day`, `active_seats`, `currency`, etc.)
+    and immediately runs multi-agent graph triage + sandbox verification.
+    """
+    db = get_db()
+    ensure_tenant_seeded(db, req.tenant_id)
+    graph = db.select_graph(f"falkortrace:{req.tenant_id}")
+    try:
+        created = create_custom_ticket(
+            graph=graph,
+            service=req.service,
+            payload=req.payload,
+            title=req.title,
+            client_name=req.client_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    triage_res = run_multi_agent_triage(
+        tenant_id=req.tenant_id,
+        service=req.service,
+        ticket_id=created["id"],
+        depth=req.depth,
+        bypass_memory=req.bypass_memory,
+    )
+    triage_res["custom_ticket_created"] = created
+    return triage_res
 
 
 @app.post("/api/ask")
