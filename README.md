@@ -5,7 +5,7 @@
 [![Database](https://img.shields.io/badge/FalkorDB-v4.2.0_GraphBLAS-indigo)](https://www.falkordb.com/)
 [![Backend](https://img.shields.io/badge/FastAPI-Python_3.11-009688)](https://fastapi.tiangolo.com/)
 [![Protocol](https://img.shields.io/badge/MCP-12_Tools_(Model_Context_Protocol)-amber)](https://modelcontextprotocol.io/)
-[![Tests](https://img.shields.io/badge/Pytest-21%2F21_Passing-emerald)](./tests/test_falkortrace.py)
+[![Tests](https://img.shields.io/badge/Pytest-22%2F22_Passing-emerald)](./tests/test_falkortrace.py)
 [![Live Demo](https://img.shields.io/badge/Live_Demo-Vercel_(ap--south--1)-success)](https://falkor-trace.vercel.app/)
 
 ---

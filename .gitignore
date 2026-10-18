@@ -20,3 +20,12 @@ env/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local video recordings & scratch media
+*.mp4
+*.mkv
+*.webm
+*.mov
+*.wav
+scratch_video/
+
