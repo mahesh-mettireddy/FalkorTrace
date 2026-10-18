@@ -1529,8 +1529,8 @@
         const p2 = posMap[e.to];
         if (!p1 || !p2) return '';
         const isHi = centerViewMode === 'subgraph' || highlightEdgeSet.has(`${e.from}->${e.to}`);
-        const isPayloadRejectedEdge = res.verdict === 'DATA_PAYLOAD_ISSUE' && e.from === res.ticket_id;
-        const isViolates = e.compliant === false || String(e.label || '').includes('VIOLATES') || isPayloadRejectedEdge;
+        const isPayloadRejectedEdge = isHi && res.verdict === 'DATA_PAYLOAD_ISSUE' && e.from === res.ticket_id;
+        const isViolates = isHi && ((res.verdict === 'PATCH_REGRESSION' && (e.compliant === false || String(e.label || '').includes('VIOLATES'))) || isPayloadRejectedEdge);
         const stroke = isViolates ? '#f43f5e' : (isHi ? '#10b981' : '#1e293b');
         const width = isHi || isViolates ? (centerViewMode === 'subgraph' ? 3.0 : 2.4) : 1.1;
         const opacity = (centerViewMode === 'subgraph' || highlightNodeSet.size === 0 || isHi || isViolates) ? 1.0 : 0.22;
@@ -1561,8 +1561,8 @@
         if (!p) return '';
         const style = NODE_COLORS[n.type] || NODE_COLORS.Service;
         const isHi = centerViewMode === 'subgraph' || highlightNodeSet.has(n.id) || n.id === res.queried_service;
-        const isBadPayloadNode = res.verdict === 'DATA_PAYLOAD_ISSUE' && n.type === 'Client_Issue';
-        const isRootCause = n.id === res.root_cause_service || n.type === 'Change' || isBadPayloadNode;
+        const isBadPayloadNode = isHi && res.verdict === 'DATA_PAYLOAD_ISSUE' && n.type === 'Client_Issue';
+        const isRootCause = isHi && (n.id === res.root_cause_service || n.type === 'Change' || isBadPayloadNode);
         const isErrorHighlight = (isRootCause && res.verdict === 'PATCH_REGRESSION') || isBadPayloadNode;
         const opacity = (centerViewMode === 'subgraph' || highlightNodeSet.size === 0 || isHi) ? 1.0 : 0.35;
         const radius = centerViewMode === 'subgraph' ? 22 : (isHi ? 16 : 11);
@@ -1578,8 +1578,9 @@
         const dispLabel = centerViewMode === 'subgraph' ? shortLabel(n.label, 24) : shortLabel(n.label, 18);
         const badgeW = Math.max(64, hopBadge.length * 5.8 + 12);
         const labelW = Math.max(76, dispLabel.length * 6.4 + 14);
-        const nodeFill = isBadPayloadNode ? '#4c0519' : style.fill;
-        const nodeStroke = isBadPayloadNode ? '#f43f5e' : style.stroke;
+        const isInactiveChange = !isHi && n.type === 'Change';
+        const nodeFill = isBadPayloadNode ? '#4c0519' : (isInactiveChange ? '#1e293b' : style.fill);
+        const nodeStroke = isBadPayloadNode ? '#f43f5e' : (isInactiveChange ? '#475569' : style.stroke);
 
         return `
           <g class="cursor-pointer" opacity="${escapeHtml(opacity)}" data-node-payload="${escapeHtml(payloadStr)}" role="button" tabindex="0" aria-label="Inspect ${escapeHtml(n.label)}">
