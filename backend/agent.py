@@ -228,6 +228,11 @@ def get_llm_status() -> Dict[str, Any]:
     }
 
 
+_LLM_SUMMARY_CACHE: Dict[str, Tuple[str, Dict[str, Any]]] = {}
+_LLM_CALL_TIMESTAMPS: List[float] = []
+_LLM_MAX_CALLS_PER_MIN = int(os.getenv("FALKORTRACE_LLM_RATE_LIMIT_PER_MIN", "15"))
+
+
 def _maybe_enhance_with_llm(
     deterministic_summary: str, answer: Dict[str, Any]
 ) -> Tuple[str, Dict[str, Any]]:
@@ -242,6 +247,22 @@ def _maybe_enhance_with_llm(
             "checked_tokens": sorted(list(SERVICE_TOKEN_RE.findall(deterministic_summary.lower()))),
         }
 
+    cache_key = f"{prov}:{model_name}:{deterministic_summary}"
+    if cache_key in _LLM_SUMMARY_CACHE:
+        return _LLM_SUMMARY_CACHE[cache_key]
+
+    now = time.monotonic()
+    _LLM_CALL_TIMESTAMPS[:] = [ts for ts in _LLM_CALL_TIMESTAMPS if (now - ts) <= 60.0]
+    if len(_LLM_CALL_TIMESTAMPS) >= _LLM_MAX_CALLS_PER_MIN:
+        ok, reason = accepts(deterministic_summary, answer)
+        return deterministic_summary, {
+            "passed": ok,
+            "reason": f"{reason} (LLM rate-limit cap active; served deterministic FalkorDB summary)",
+            "guardrail_type": "entity_reference_validation",
+            "mode": "deterministic-graph-template-rate-protected",
+            "checked_tokens": sorted(list(SERVICE_TOKEN_RE.findall(deterministic_summary.lower()))),
+        }
+
     prompt = (
         "You are an enterprise SRE incident investigation synthesizer grounded by FalkorDB. "
         "Summarize this FalkorDB graph investigation and sandbox check result in 2 concise, technical sentences. "
@@ -250,6 +271,7 @@ def _maybe_enhance_with_llm(
         f"Verified FalkorDB & Sandbox Evidence: {deterministic_summary}"
     )
     try:
+        _LLM_CALL_TIMESTAMPS.append(now)
         candidate = ""
         mode_label = ""
         if prov == "openai":
@@ -289,13 +311,19 @@ def _maybe_enhance_with_llm(
         if candidate:
             ok, reason = accepts(candidate, answer)
             if ok:
-                return candidate, {
-                    "passed": True,
-                    "reason": f"ok (Live {mode_label} output verified by accepts() entity-reference guardrail)",
-                    "guardrail_type": "entity_reference_validation",
-                    "mode": mode_label,
-                    "checked_tokens": sorted(list(SERVICE_TOKEN_RE.findall(candidate.lower()))),
-                }
+                res_tuple = (
+                    candidate,
+                    {
+                        "passed": True,
+                        "reason": f"ok (Live {mode_label} output verified by accepts() entity-reference guardrail)",
+                        "guardrail_type": "entity_reference_validation",
+                        "mode": mode_label,
+                        "checked_tokens": sorted(list(SERVICE_TOKEN_RE.findall(candidate.lower()))),
+                    },
+                )
+                if len(_LLM_SUMMARY_CACHE) < 256:
+                    _LLM_SUMMARY_CACHE[cache_key] = res_tuple
+                return res_tuple
             return deterministic_summary, {
                 "passed": True,
                 "reason": f"Guardrail blocked ungrounded entity token ({reason}); served verified FalkorDB summary",

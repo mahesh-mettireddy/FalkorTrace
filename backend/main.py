@@ -114,6 +114,42 @@ async def graph_operation_error_handler(_request: Any, exc: GraphOperationError)
         },
     )
 
+from collections import deque
+import threading
+import time
+from starlette.requests import Request
+
+_RATE_LIMIT_LOCK = threading.Lock()
+_IP_REQUEST_LOG: Dict[str, deque] = {}
+_RATE_LIMIT_MAX_REQUESTS = int(os.getenv("FALKORTRACE_RATE_LIMIT_PER_MIN", "60"))
+_RATE_LIMIT_WINDOW_SEC = 60.0
+
+
+@app.middleware("http")
+async def api_rate_limit_middleware(request: Request, call_next: Any) -> Any:
+    """Protect public /api/* endpoints from automated abuse or bot floods."""
+    path = request.url.path
+    if path.startswith("/api/") and path != "/api/health":
+        client_host = (request.client.host if request.client else "unknown") or "unknown"
+        # Skip rate limiting for local pytest TestClient
+        if client_host not in ("testclient", "127.0.0.1", "::1", "localhost"):
+            now = time.monotonic()
+            with _RATE_LIMIT_LOCK:
+                q = _IP_REQUEST_LOG.setdefault(client_host, deque())
+                while q and (now - q[0]) > _RATE_LIMIT_WINDOW_SEC:
+                    q.popleft()
+                if len(q) >= _RATE_LIMIT_MAX_REQUESTS:
+                    return JSONResponse(
+                        status_code=429,
+                        content={
+                            "detail": "Rate limit exceeded (max 60 requests/minute per IP). Please wait a moment and retry."
+                        },
+                        headers={"Retry-After": "15"},
+                    )
+                q.append(now)
+    return await call_next(request)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
