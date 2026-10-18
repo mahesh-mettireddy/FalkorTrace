@@ -1968,4 +1968,3 @@ RETURN i.id AS id, s.name AS service
         raise GraphOperationError("create_custom_ticket.persist") from exc
 
     return params
-

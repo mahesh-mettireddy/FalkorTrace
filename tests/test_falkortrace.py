@@ -789,5 +789,3 @@ def test_custom_live_ticket_creation_and_dynamic_sandbox_math() -> None:
     assert seats_data["verdict"] == "WORKING_AS_PER_PRD"
     assert "15% discount" in seats_data["verification"]["expected_value"]
     assert "15% discount" in seats_data["verification"]["observed_value"]
-
-
