@@ -22,18 +22,20 @@
       font-family: 'JetBrains Mono', monospace;
     }
     ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
+      width: 12px;
+      height: 12px;
     }
     ::-webkit-scrollbar-track {
       background: #070b16;
+      border-left: 1px solid #1e293b;
     }
     ::-webkit-scrollbar-thumb {
-      background: #1e293b;
-      border-radius: 3px;
+      background: linear-gradient(180deg, #10b981, #0ea5e9);
+      border-radius: 6px;
+      border: 2px solid #070b16;
     }
     ::-webkit-scrollbar-thumb:hover {
-      background: #334155;
+      background: linear-gradient(180deg, #34d399, #38bdf8);
     }
     @keyframes pulseDash {
       to {
@@ -71,7 +73,7 @@
     .status-offline {
       color: #fda4af;
       border-color: rgba(244, 63, 94, 0.5);
-      background: rgba(244, 63, 94, 0.14);
+      background: rgba(245, 63, 94, 0.14);
     }
     button:focus-visible,
     input:focus-visible,
@@ -84,7 +86,7 @@
     }
   </style>
 </head>
-<body class="min-h-screen lg:h-screen flex flex-col bg-[#050811] text-slate-100">
+<body class="min-h-screen flex flex-col bg-[#050811] text-slate-100 overflow-y-auto">
 
   <!-- ===================================================================== -->
   <!-- 1. COMPACT TOP BAR: BRAND + ENGINE STATUS + BENCHMARK + CONTROLS       -->
@@ -319,12 +321,12 @@
   <!--    CENTER: 🧠 HOW FALKORDB SOLVES IT (LIVE MULTI-HOP GRAPH)            -->
   <!--    RIGHT: ✅ EXECUTABLE PROOF, GIT DIFF & FIX                          -->
   <!-- ===================================================================== -->
-  <main id="workspaceShell" class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 overflow-y-auto lg:overflow-hidden lg:min-h-0" aria-busy="true">
+  <main id="workspaceShell" class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 min-h-[700px]" aria-busy="true">
 
     <!-- =================================================================== -->
     <!-- STEP 1 (LEFT 3 COLS): ❌ THE CORE ERROR & WHY STANDARD RAG FAILS     -->
     <!-- =================================================================== -->
-    <section class="lg:col-span-3 flex flex-col lg:h-full lg:min-h-0 rounded-xl border border-rose-500/40 bg-[#0a0f1d] error-card-glow overflow-hidden">
+    <section class="lg:col-span-3 flex flex-col min-h-[680px] rounded-xl border border-rose-500/40 bg-[#0a0f1d] error-card-glow overflow-hidden">
       <div class="px-3.5 py-2 border-b border-rose-500/30 bg-gradient-to-r from-rose-950/60 via-slate-900 to-slate-900 flex items-center justify-between shrink-0">
         <div>
           <span class="text-xs font-extrabold uppercase tracking-wider text-rose-400">1. THE CORE ERROR</span>
@@ -397,7 +399,7 @@
     <!-- =================================================================== -->
     <!-- STEP 2 (CENTER 6 COLS): 🧠 HOW FALKORDB SOLVES IT (HERO GRAPH)       -->
     <!-- =================================================================== -->
-    <section class="lg:col-span-6 flex flex-col lg:h-full lg:min-h-0 rounded-xl border-2 border-emerald-500/55 bg-[#070c18] falkor-hero-glow overflow-hidden">
+    <section class="lg:col-span-6 flex flex-col min-h-[680px] rounded-xl border-2 border-emerald-500/55 bg-[#070c18] falkor-hero-glow overflow-hidden">
       <!-- Center Hero Header -->
       <div class="px-4 py-2 border-b border-emerald-500/30 bg-gradient-to-r from-emerald-950/70 via-slate-900 to-cyan-950/50 flex flex-wrap items-center justify-between gap-2 shrink-0">
         <div class="flex items-center gap-2.5">
@@ -528,7 +530,7 @@
     <!-- =================================================================== -->
     <!-- STEP 3 (RIGHT 3 COLS): ✅ VERIFIED ROOT CAUSE, DIFF & FIX            -->
     <!-- =================================================================== -->
-    <section class="lg:col-span-3 flex flex-col lg:h-full lg:min-h-0 rounded-xl border border-emerald-500/40 bg-[#0a0f1d] proof-card-glow overflow-hidden">
+    <section class="lg:col-span-3 flex flex-col min-h-[680px] rounded-xl border border-emerald-500/40 bg-[#0a0f1d] proof-card-glow overflow-hidden">
       <div class="px-3.5 py-2 border-b border-emerald-500/25 bg-gradient-to-r from-emerald-950/60 via-slate-900 to-slate-900 flex items-center justify-between shrink-0">
         <div>
           <span class="text-xs font-extrabold uppercase tracking-wider text-emerald-400">3. VERIFIED ROOT CAUSE &amp; FIX</span>
@@ -1160,6 +1162,7 @@
         const graphRes = await fetchJson(`/api/graph?tenant_id=${encodeURIComponent(currentTenant)}`);
         fullGraphData = graphRes || { nodes: [], edges: [] };
         document.getElementById('totalNodesCount').textContent = (fullGraphData.nodes || []).length;
+        document.getElementById('customBuilderPanel')?.classList.add('hidden');
         renderComparisonWorkspace(res);
         setGlobalNotice(
           `Created live node (:Client_Issue {id: "${res.ticket_id}"}) in FalkorDB & executed sandbox check (${res.verification?.expected_value || ''} vs ${res.verification?.observed_value || ''}).`,
