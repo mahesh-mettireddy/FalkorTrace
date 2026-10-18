@@ -1317,6 +1317,23 @@
       }
     }
 
+    function shortLabel(str, maxLen = 22) {
+      const s = String(str ?? '');
+      if (s.length <= maxLen) return s;
+      if (s.endsWith('.java')) {
+        const base = s.slice(0, -5);
+        return base.length > maxLen - 5 ? base.slice(0, maxLen - 7) + '….java' : s;
+      }
+      return s.slice(0, maxLen - 1) + '…';
+    }
+
+    function shortEdgeLabel(str) {
+      const s = String(str ?? '');
+      if (s.startsWith('DEPENDS_ON')) return 'DEPENDS_ON';
+      if (s.includes('VIOLATES')) return 'VIOLATES (!)';
+      return s;
+    }
+
     function renderInteractiveGraphSvg(res) {
       const nodesGroup = document.getElementById('svgNodes');
       const edgesGroup = document.getElementById('svgEdges');
@@ -1332,9 +1349,7 @@
       let displayEdges = [];
 
       if (centerViewMode === 'subgraph' && highlightNodeSet.size > 0) {
-        // Show ONLY the causal nodes involved in this trace so the error path is crystal clear!
         const subIds = new Set(highlightNodeSet);
-        // Also include the CheckDefinition node if verified
         const verifCheckId = res.verification?.check_id || res.citations?.check_id;
         if (verifCheckId) subIds.add(verifCheckId);
 
@@ -1352,8 +1367,10 @@
         ];
         displayEdges = [];
       } else {
-        displayNodes = allNodes;
-        displayEdges = allEdges;
+        // In Full Graph view, filter out transient Observation/ArtifactVersion noise so the 40+ core architecture nodes are crisp
+        displayNodes = allNodes.filter(n => n.type !== 'Observation' && n.type !== 'ArtifactVersion');
+        const validIds = new Set(displayNodes.map(n => n.id));
+        displayEdges = allEdges.filter(e => validIds.has(e.from) && validIds.has(e.to));
       }
 
       const posMap = centerViewMode === 'subgraph'
@@ -1367,21 +1384,27 @@
         const isHi = centerViewMode === 'subgraph' || highlightEdgeSet.has(`${e.from}->${e.to}`);
         const isViolates = e.compliant === false || String(e.label || '').includes('VIOLATES');
         const stroke = isViolates ? '#f43f5e' : (isHi ? '#10b981' : '#1e293b');
-        const width = isHi || isViolates ? 3.2 : 1.2;
-        const opacity = (centerViewMode === 'subgraph' || highlightNodeSet.size === 0 || isHi || isViolates) ? 1.0 : 0.3;
+        const width = isHi || isViolates ? (centerViewMode === 'subgraph' ? 3.0 : 2.4) : 1.1;
+        const opacity = (centerViewMode === 'subgraph' || highlightNodeSet.size === 0 || isHi || isViolates) ? 1.0 : 0.22;
         const marker = isViolates ? 'url(#arrow-violates)' : (isHi ? 'url(#arrow-active)' : 'url(#arrow-default)');
         const animClass = (isHi || isViolates) ? 'active-edge-anim' : '';
+
+        // Slight quadratic curve when nodes are on the same Y or vertical to keep edges distinct
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
         const midX = (p1.x + p2.x) / 2;
-        const midY = (p1.y + p2.y) / 2 - 8;
+        const midY = (p1.y + p2.y) / 2;
+        const edgeText = shortEdgeLabel(e.label);
+        const textWidth = Math.max(54, edgeText.length * 5.8 + 10);
 
         return `
           <g opacity="${escapeHtml(opacity)}">
             <line x1="${escapeHtml(p1.x)}" y1="${escapeHtml(p1.y)}" x2="${escapeHtml(p2.x)}" y2="${escapeHtml(p2.y)}"
                   stroke="${stroke}" stroke-width="${escapeHtml(width)}" marker-end="${marker}" class="${animClass}" />
             ${(isHi || isViolates) ? `
-              <rect x="${escapeHtml(midX - 44)}" y="${escapeHtml(midY - 9)}" width="88" height="13" rx="4" fill="#050914" fill-opacity="0.85" />
-              <text x="${escapeHtml(midX)}" y="${escapeHtml(midY)}" text-anchor="middle" fill="${isViolates ? '#fda4af' : '#6ee7b7'}"
-                    font-size="9.5" font-family="JetBrains Mono" font-weight="700">${escapeHtml(e.label)}</text>
+              <rect x="${escapeHtml(midX - textWidth / 2)}" y="${escapeHtml(midY - 8)}" width="${escapeHtml(textWidth)}" height="14" rx="4" fill="#050914" stroke="${isViolates ? '#881337' : '#064e3b'}" stroke-width="0.8" fill-opacity="0.92" />
+              <text x="${escapeHtml(midX)}" y="${escapeHtml(midY + 2)}" text-anchor="middle" fill="${isViolates ? '#fda4af' : '#6ee7b7'}"
+                    font-size="8.5" font-family="JetBrains Mono" font-weight="700">${escapeHtml(edgeText)}</text>
             ` : ''}
           </g>
         `;
@@ -1393,29 +1416,34 @@
         const style = NODE_COLORS[n.type] || NODE_COLORS.Service;
         const isHi = centerViewMode === 'subgraph' || highlightNodeSet.has(n.id) || n.id === res.queried_service;
         const isRootCause = n.id === res.root_cause_service || n.type === 'Change';
-        const opacity = (centerViewMode === 'subgraph' || highlightNodeSet.size === 0 || isHi) ? 1.0 : 0.38;
-        const radius = centerViewMode === 'subgraph' ? 24 : (isHi ? 19 : 14);
+        const opacity = (centerViewMode === 'subgraph' || highlightNodeSet.size === 0 || isHi) ? 1.0 : 0.35;
+        const radius = centerViewMode === 'subgraph' ? 22 : (isHi ? 16 : 11);
         const glowUrl = (isRootCause && res.verdict === 'PATCH_REGRESSION') ? 'url(#nodeGlowRed)' : 'url(#nodeGlowGreen)';
         const ringHtml = isHi
           ? `
-            <circle cx="${escapeHtml(p.x)}" cy="${escapeHtml(p.y)}" r="${escapeHtml(radius + 16)}" fill="${glowUrl}" />
-            <circle cx="${escapeHtml(p.x)}" cy="${escapeHtml(p.y)}" r="${escapeHtml(radius + 6)}" fill="none" stroke="${isRootCause && res.verdict === 'PATCH_REGRESSION' ? '#f43f5e' : style.stroke}" stroke-width="2" stroke-dasharray="5 3" />
+            <circle cx="${escapeHtml(p.x)}" cy="${escapeHtml(p.y)}" r="${escapeHtml(radius + 14)}" fill="${glowUrl}" />
+            <circle cx="${escapeHtml(p.x)}" cy="${escapeHtml(p.y)}" r="${escapeHtml(radius + 5)}" fill="none" stroke="${isRootCause && res.verdict === 'PATCH_REGRESSION' ? '#f43f5e' : style.stroke}" stroke-width="1.8" stroke-dasharray="4 3" />
           `
           : '';
         const payloadStr = encodeURIComponent(JSON.stringify(n));
-        const hopBadge = p.hopLabel ? `${p.hopLabel} · ${style.badge}` : style.badge;
+        const hopBadge = p.hopLabel ? `${p.hopLabel}` : style.badge;
+        const dispLabel = centerViewMode === 'subgraph' ? shortLabel(n.label, 24) : shortLabel(n.label, 18);
+        const badgeW = Math.max(64, hopBadge.length * 5.8 + 12);
+        const labelW = Math.max(76, dispLabel.length * 6.4 + 14);
 
         return `
           <g class="cursor-pointer" opacity="${escapeHtml(opacity)}" data-node-payload="${escapeHtml(payloadStr)}" role="button" tabindex="0" aria-label="Inspect ${escapeHtml(n.label)}">
             ${ringHtml}
-            <circle cx="${escapeHtml(p.x)}" cy="${escapeHtml(p.y)}" r="${escapeHtml(radius)}" fill="${style.fill}" stroke="${style.stroke}" stroke-width="${isHi ? 2.8 : 1.5}" />
-            <rect x="${escapeHtml(p.x - 58)}" y="${escapeHtml(p.y - radius - 22)}" width="116" height="14" rx="4" fill="#050914" fill-opacity="0.85" />
-            <text x="${escapeHtml(p.x)}" y="${escapeHtml(p.y - radius - 12)}" text-anchor="middle" fill="${isRootCause && res.verdict === 'PATCH_REGRESSION' ? '#fda4af' : '#94a3b8'}" font-size="9" font-family="JetBrains Mono" font-weight="700">
-              ${escapeHtml(hopBadge)}
-            </text>
-            <rect x="${escapeHtml(p.x - 75)}" y="${escapeHtml(p.y + radius + 5)}" width="150" height="18" rx="4" fill="#050914" fill-opacity="0.88" />
-            <text x="${escapeHtml(p.x)}" y="${escapeHtml(p.y + radius + 17)}" text-anchor="middle" fill="#ffffff" font-size="${centerViewMode === 'subgraph' ? '11.5' : '10'}" font-family="JetBrains Mono" font-weight="700">
-              ${escapeHtml(n.label)}
+            <circle cx="${escapeHtml(p.x)}" cy="${escapeHtml(p.y)}" r="${escapeHtml(radius)}" fill="${style.fill}" stroke="${style.stroke}" stroke-width="${isHi ? 2.5 : 1.2}" />
+            ${(centerViewMode === 'subgraph' || isHi) ? `
+              <rect x="${escapeHtml(p.x - badgeW / 2)}" y="${escapeHtml(p.y - radius - 20)}" width="${escapeHtml(badgeW)}" height="13" rx="3.5" fill="#050914" fill-opacity="0.9" />
+              <text x="${escapeHtml(p.x)}" y="${escapeHtml(p.y - radius - 10.5)}" text-anchor="middle" fill="${isRootCause && res.verdict === 'PATCH_REGRESSION' ? '#fda4af' : '#94a3b8'}" font-size="8.5" font-family="JetBrains Mono" font-weight="700">
+                ${escapeHtml(hopBadge)}
+              </text>
+            ` : ''}
+            <rect x="${escapeHtml(p.x - labelW / 2)}" y="${escapeHtml(p.y + radius + 4)}" width="${escapeHtml(labelW)}" height="16" rx="4" fill="#050914" fill-opacity="0.9" />
+            <text x="${escapeHtml(p.x)}" y="${escapeHtml(p.y + radius + 15)}" text-anchor="middle" fill="${isHi ? '#ffffff' : '#94a3b8'}" font-size="${centerViewMode === 'subgraph' ? '10.5' : (isHi ? '9.5' : '8.5')}" font-family="JetBrains Mono" font-weight="${isHi ? '700' : '500'}">
+              ${escapeHtml(dispLabel)}
             </text>
           </g>
         `;
@@ -1433,84 +1461,91 @@
       });
     }
 
-    // Clean step-by-step left-to-right causal layout for Subgraph mode
+    // Two-row Serpentine / Pipeline Layout for Subgraph Mode:
+    // Top Row (Y=135): Ticket ➔ Hop 0 ➔ Hop 1 ➔ Hop 2 ➔ Hop 3 (Root Service)
+    // Bottom Row (Y=335): Breaking Commit + Code Module + Sandbox Check + PRD Spec + Runbook + Owner Team
     function computeFocusedCausalLayout(nodes, res) {
       const pos = {};
       const viaPath = (res.citations && res.citations.via_path) || res.services || [];
 
       if (nodes.length === 1) {
-        pos[nodes[0].id] = { x: 490, y: 240, hopLabel: 'HALTED' };
+        pos[nodes[0].id] = { x: 490, y: 230, hopLabel: 'HALTED AT ENTITY GATE' };
         return pos;
       }
 
-      // Assign each node to a logical stage column along the causal chain
-      const stages = [];
+      const topRow = [];
+      const bottomRow = [];
       const placed = new Set();
 
-      // Stage 0: Ticket / Finding
-      const stage0 = nodes.filter(n => n.type === 'Client_Issue' || n.type === 'Finding');
-      if (stage0.length) {
-        stages.push(stage0.map(n => ({ node: n, hopLabel: n.type === 'Client_Issue' ? 'SYMPTOM' : 'MEMORY' })));
-        stage0.forEach(n => placed.add(n.id));
-      }
+      // 1. Put Ticket / Memory Finding at start of Top Row
+      nodes.filter(n => n.type === 'Client_Issue' || n.type === 'Finding').forEach(n => {
+        topRow.push({ node: n, hopLabel: n.type === 'Client_Issue' ? '1. TICKET' : 'MEMORY HIT' });
+        placed.add(n.id);
+      });
 
-      // Stages for each Service Hop in order
+      // 2. Put Service Hops in order across Top Row
       viaPath.forEach((svcId, idx) => {
         const svcNode = nodes.find(n => n.id === svcId && !placed.has(n.id));
         if (svcNode) {
-          const isLastHop = idx === viaPath.length - 1 && viaPath.length > 1;
-          const label = idx === 0 ? 'ENTRYPOINT' : (isLastHop ? `HOP ${idx} (ROOT)` : `HOP ${idx}`);
-          stages.push([{ node: svcNode, hopLabel: label }]);
+          const isLast = idx === viaPath.length - 1 && viaPath.length > 1;
+          const lbl = idx === 0 ? 'ENTRYPOINT' : (isLast ? `HOP ${idx} (ROOT CAUSE)` : `HOP ${idx}`);
+          topRow.push({ node: svcNode, hopLabel: lbl });
           placed.add(svcNode.id);
         }
       });
 
-      // Any remaining services
-      const extraServices = nodes.filter(n => n.type === 'Service' && !placed.has(n.id));
-      if (extraServices.length) {
-        stages.push(extraServices.map(n => ({ node: n, hopLabel: 'SERVICE' })));
-        extraServices.forEach(n => placed.add(n.id));
-      }
+      // Any extra service nodes go to Top Row
+      nodes.filter(n => n.type === 'Service' && !placed.has(n.id)).forEach(n => {
+        topRow.push({ node: n, hopLabel: 'SERVICE' });
+        placed.add(n.id);
+      });
 
-      // Stage: Code Module + Commit Change
-      const codeAndChanges = nodes.filter(n => (n.type === 'Code_Module' || n.type === 'Change') && !placed.has(n.id));
-      if (codeAndChanges.length) {
-        stages.push(codeAndChanges.map(n => ({
-          node: n,
-          hopLabel: n.type === 'Change' ? 'BREAKING COMMIT' : 'TARGET MODULE'
-        })));
-        codeAndChanges.forEach(n => placed.add(n.id));
-      }
-
-      // Final Stage: Requirement + CheckDefinition + Runbook + Team + Person
-      const proofNodes = nodes.filter(n => !placed.has(n.id));
-      if (proofNodes.length) {
-        stages.push(proofNodes.map(n => ({ node: n, hopLabel: '' })));
-      }
-
-      const totalStages = Math.max(stages.length, 1);
-      const minX = 95;
-      const maxX = 885;
-      const spanX = maxX - minX;
-
-      stages.forEach((stageList, sIdx) => {
-        const x = totalStages === 1 ? 490 : Math.round(minX + (spanX * sIdx) / (totalStages - 1));
-        const count = stageList.length;
-        stageList.forEach((item, idx) => {
-          const y = count === 1
-            ? (sIdx % 2 === 1 && totalStages > 4 ? 215 : 255)
-            : Math.round((460 / (count + 1)) * (idx + 1)) + 15;
-          pos[item.node.id] = { x, y, hopLabel: item.hopLabel };
+      // 3. Put Code Module, Breaking Commit, Check, Requirement, Runbook, Team, Person on Bottom Row (ordered right-to-left under Root Cause)
+      const bottomOrder = ['Change', 'Code_Module', 'CheckDefinition', 'Requirement', 'Runbook', 'Team', 'Person'];
+      bottomOrder.forEach(tName => {
+        nodes.filter(n => n.type === tName && !placed.has(n.id)).forEach(n => {
+          const lblMap = {
+            Change: 'BREAKING COMMIT',
+            Code_Module: 'CODE MODULE',
+            CheckDefinition: 'SANDBOX CHECK',
+            Requirement: 'PRD CONTRACT',
+            Runbook: 'RUNBOOK',
+            Team: 'OWNER TEAM',
+            Person: 'ON-CALL SRE'
+          };
+          bottomRow.push({ node: n, hopLabel: lblMap[tName] || tName });
+          placed.add(n.id);
         });
+      });
+
+      // Any remaining nodes
+      nodes.filter(n => !placed.has(n.id)).forEach(n => {
+        bottomRow.push({ node: n, hopLabel: n.type.toUpperCase() });
+      });
+
+      // Position Top Row evenly from X=110 to X=870 at Y=125 (with slight wave for edge label clarity)
+      const topCount = topRow.length;
+      topRow.forEach((item, idx) => {
+        const x = topCount === 1 ? 490 : Math.round(115 + (750 * idx) / (topCount - 1));
+        const y = topCount > 2 ? (idx % 2 === 1 ? 105 : 145) : 130;
+        pos[item.node.id] = { x, y, hopLabel: item.hopLabel };
+      });
+
+      // Position Bottom Row evenly from Right (under Root Cause X=865) to Left (X=115) at Y=335
+      const botCount = bottomRow.length;
+      bottomRow.forEach((item, idx) => {
+        const x = botCount === 1 ? 490 : Math.round(865 - (750 * idx) / (botCount - 1));
+        const y = botCount > 2 ? (idx % 2 === 1 ? 310 : 355) : 335;
+        pos[item.node.id] = { x, y, hopLabel: item.hopLabel };
       });
 
       return pos;
     }
 
+    // Well-spaced 6-Column Architecture Layout for Full Graph Mode
     function computeFullGraphLayout(nodes, res) {
       const pos = {};
-      const height = 460;
-      const cols = { 0: [], 1: [], 2: [], 3: [], 4: [] };
+      const cols = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [] };
       const viaPath = (res.citations && res.citations.via_path) || res.services || [];
 
       nodes.forEach(n => {
@@ -1520,23 +1555,26 @@
           const hopIdx = viaPath.indexOf(n.id);
           if (hopIdx >= 2) cols[2].push(n);
           else cols[1].push(n);
-        } else if (n.type === 'Code_Module' || n.type === 'Change' || n.type === 'ArtifactVersion') {
+        } else if (n.type === 'Code_Module' || n.type === 'Change') {
           cols[3].push(n);
-        } else {
+        } else if (n.type === 'Requirement' || n.type === 'CheckDefinition') {
           cols[4].push(n);
+        } else {
+          cols[5].push(n);
         }
       });
 
-      const colX = [100, 290, 490, 690, 880];
+      const colX = [85, 245, 410, 575, 740, 895];
       Object.keys(cols).forEach(cIdx => {
         const list = cols[cIdx];
         const x = colX[cIdx];
         const count = list.length;
         list.forEach((n, i) => {
-          const stepY = height / (count + 1);
+          const usableHeight = 420;
+          const stepY = usableHeight / (count + 1);
           pos[n.id] = {
-            x: x + ((i % 2 === 1 && count > 5) ? 28 : 0),
-            y: Math.round(stepY * (i + 1)) + 15
+            x: x + (i % 2 === 1 ? 16 : -16),
+            y: Math.round(stepY * (i + 1)) + 20
           };
         });
       });
